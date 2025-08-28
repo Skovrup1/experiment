@@ -1,11 +1,31 @@
 module test {
 
-foo :: () -> I32 {
+a :: () -> I32 {
     return 0;
 }
 
+b :: (a: I32, b: I32) -> I32 {
+    return a + b;
+}
+
+c :: (a := 0, b := 2) -> I32 {
+    return a + b;
+}
+
+d :: (a: I32 = 0, b: I32 = 2) -> I32 {
+    return a + b;
+}
+
 main :: () -> I32 {
-    return foo();
+    a();
+
+    b(1, 2);
+
+    c();
+
+    d();
+
+    return 0;
 }
 
 }

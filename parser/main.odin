@@ -14,7 +14,19 @@ IdentLit :: struct {
 	token: scanner.TokenIndex,
 }
 
+StringLit :: struct {
+	token: scanner.TokenIndex,
+}
+
+RealLit :: struct {
+	token: scanner.TokenIndex,
+}
+
 IntLit :: struct {
+	token: scanner.TokenIndex,
+}
+
+BoolLit :: struct {
 	token: scanner.TokenIndex,
 }
 
@@ -23,7 +35,17 @@ VarDecl :: struct {
 	expr:  NodeIndex,
 }
 
-FuncDecl :: struct {
+ConstDecl :: struct {
+	token: scanner.TokenIndex,
+	expr:  NodeIndex,
+}
+
+ParamDecl :: struct {
+	token: scanner.TokenIndex,
+	expr:  NodeIndex,
+}
+
+ProcDecl :: struct {
 	token:  scanner.TokenIndex,
 	params: []NodeIndex,
 	body:   NodeIndex,
@@ -65,9 +87,16 @@ WhileStmt :: struct {
 	body:  NodeIndex,
 }
 
+BreakStmt :: struct {
+	token: scanner.TokenIndex,
+}
+
+ContinueStmt :: struct {
+	token: scanner.TokenIndex,
+}
+
 CallExpr :: struct {
 	token: scanner.TokenIndex,
-	ident: scanner.TokenIndex,
 	args:  []NodeIndex,
 }
 
@@ -85,30 +114,37 @@ BinaryExpr :: struct {
 Node :: union {
 	Module,
 	IdentLit,
-	//StringLit,
-	//RealLit,
-	//BoolLit,
+	StringLit,
+	RealLit,
 	IntLit,
-	FuncDecl,
+	BoolLit,
 	VarDecl,
+	ConstDecl,
+	ParamDecl,
+	ProcDecl,
 	ExprStmt,
 	BlockStmt,
 	ReturnStmt,
 	IfStmt,
 	ForStmt,
 	WhileStmt,
-	//BreakStmt,
-	//ContinueStmt,
+	BreakStmt,
+	ContinueStmt,
 	CallExpr,
-	//MemberExpr,
-	//RefExpr,
-	//AccessExpr,
+	//MemberExpr, // . for structs
+	//RefExpr,    // *& for pointers
+	//AccessExpr, // [] for arrays
 	UnaryExpr,
 	BinaryExpr,
 }
 
 NodeIndex :: distinct u32
 INVALID_NODE :: max(NodeIndex)
+
+ParseMode :: enum {
+	IgnoreComments,
+	ParseComments,
+}
 
 Parser :: struct {
 	source:    []u8,
@@ -117,6 +153,8 @@ Parser :: struct {
 	nodes:     [dynamic]Node,
 	cursor:    scanner.TokenIndex,
 	lookahead: scanner.TokenIndex,
+	errors:    i32,
+	mode:      ParseMode,
 }
 
 make_parser :: proc(source: []u8) -> Parser {
@@ -129,7 +167,7 @@ make_parser :: proc(source: []u8) -> Parser {
 	append(&tokens, scanner.next_token(&scan))
 	lookahead := scanner.TokenIndex(len(tokens) - 1)
 
-	return Parser{source, scan, tokens, nodes, cursor, lookahead}
+	return Parser{source, scan, tokens, nodes, cursor, lookahead, 0, .IgnoreComments}
 }
 
 next_token :: proc(p: ^Parser) -> scanner.TokenIndex {
@@ -169,13 +207,44 @@ parse :: proc(p: ^Parser) -> []Node {
 	return p.nodes[:]
 }
 
+parse_type :: proc(p: ^Parser) -> NodeIndex {
+	if peek(p) == .I32 {
+		token := p.cursor
+		next(p)
+		return add_node(p, IdentLit{token})
+	}
+
+	panic(fmt.tprintf("ivalid type identifier: %v", peek(p)))
+}
+
+parse_call_expr :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	args := make([dynamic]NodeIndex, 0, 1)
+	for peek(p) != .RParen {
+		append(&args, parse_expr(p))
+		if peek(p) == .Comma {
+			next(p)
+		} else {
+			break
+		}
+	}
+	next(p)
+
+	return add_node(p, CallExpr{token, args[:]})
+}
+
 parse_atom :: proc(p: ^Parser) -> NodeIndex {
 	atom := peek(p)
 	#partial switch atom {
 	case .Identifier:
 		token := p.cursor
 		next(p)
-		return add_node(p, IdentLit{token})
+
+		if peek(p) == .LParen {
+			next(p)
+			return parse_call_expr(p, token)
+		} else {
+			return add_node(p, IdentLit{token})
+		}
 	case .String:
 		panic("todo")
 	case .Real:
@@ -185,14 +254,19 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 		next(p)
 		return add_node(p, IntLit{token})
 	case .True, .False:
-		panic("todo")
+		token := p.cursor
+		next(p)
+		return add_node(p, BoolLit{token})
 	case .Minus, .Not:
 		token := p.cursor
 		next(p)
 		expr := parse_expr(p, prefix_prec(atom))
 		return add_node(p, UnaryExpr{token, expr})
 	case .LParen:
-		panic("todo")
+		next(p)
+		inner_expr := parse_expr(p)
+		expect(p, .RParen)
+		return inner_expr
 	case:
 		panic(fmt.tprintf("invalid atom: %v", atom))
 	}
@@ -359,20 +433,15 @@ parse_if_stmt :: proc(p: ^Parser) -> NodeIndex {
 	return add_node(p, IfStmt{token, cond, then, else_})
 }
 
-
 parse_for_init :: proc(p: ^Parser) -> NodeIndex {
-	// This is a special case for for loop initializers.
-	// It can be a variable declaration or a simple expression.
-	// It does NOT consume a trailing semicolon.
 	if peek(p) == .Identifier && peek_next(p) == .Var {
 		token := p.cursor
-		next(p) // consume identifier
-		next(p) // consume Var `:=`
+		next(p)
+		next(p)
 		expr := parse_expr(p)
 		return add_node(p, VarDecl{token, expr})
 	}
 
-	// Otherwise, it's just a simple expression.
 	return parse_expr(p)
 }
 
@@ -380,33 +449,29 @@ parse_for_stmt :: proc(p: ^Parser) -> NodeIndex {
 	token := p.cursor
 	next(p)
 
-	// 1. Parse optional initializer.
-	// If the next token is not a semicolon, we have an initializer.
+	// optional initializer.
 	init: NodeIndex = INVALID_NODE
 	if peek(p) != .Semicolon {
 		init = parse_for_init(p)
 	}
 
-	// 2. Expect the first semicolon.
 	expect(p, .Semicolon)
 
-	// 3. Parse optional condition.
+	// optional condition.
 	cond: NodeIndex = INVALID_NODE
 	if peek(p) != .Semicolon {
 		cond = parse_expr(p)
 	}
 
-	// 4. Expect the second semicolon.
 	expect(p, .Semicolon)
 
-	// 5. Parse optional increment expression.
-	// If the next token is not the start of the body block, we have an incrementer.
+	// optional increment expression.
 	incr: NodeIndex = INVALID_NODE
 	if peek(p) != .LBrace {
 		incr = parse_expr(p)
 	}
 
-	// 6. Parse the mandatory body.
+	// mandatory body
 	body := parse_decl_or_stmt(p)
 
 	return add_node(p, ForStmt{token, init, cond, incr, body})
@@ -420,12 +485,33 @@ parse_while_stmt :: proc(p: ^Parser) -> NodeIndex {
 	return add_node(p, WhileStmt{token, cond, body})
 }
 
-parse_func_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
-	expect(p, .LParen)
+parse_param_decl :: proc(p: ^Parser) -> NodeIndex {
+	token := p.cursor
+	expect(p, .Identifier)
+
+	#partial switch peek(p) {
+	case .Var:
+		next(p)
+		expr := parse_expr(p)
+		return add_node(p, ParamDecl{token, expr})
+	case .Colon:
+		next(p)
+		parse_type(p)
+		expr := INVALID_NODE
+		if allow(p, .Assign) {
+			expr = parse_expr(p)
+		}
+		return add_node(p, ParamDecl{token, expr})
+	case:
+		panic(fmt.tprintf("invalid param decl: %v\n", peek(p)))
+	}
+}
+
+parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	params := make([dynamic]NodeIndex)
 	if peek(p) != .RParen {
 		for {
-			append(&params, parse_expr(p))
+			append(&params, parse_param_decl(p))
 			if peek(p) == .Comma {
 				next(p)
 			} else {
@@ -437,19 +523,47 @@ parse_func_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 
 	expect(p, .Minus)
 	expect(p, .Greater)
-	expect(p, .I32)
+	parse_type(p)
 
 	body := parse_decl_or_stmt(p)
 
-	return add_node(p, FuncDecl{token, params[:], body})
+	return add_node(p, ProcDecl{token, params[:], body})
+}
+
+parse_const_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	expr := parse_expr(p)
+	expect(p, .Semicolon)
+
+	return add_node(p, ConstDecl{token, expr})
 }
 
 parse_var_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
-	expect(p, .Var)
 	expr := parse_expr(p)
 	expect(p, .Semicolon)
 
 	return add_node(p, VarDecl{token, expr})
+}
+
+parse_type_annotation :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	parse_type(p)
+
+	#partial switch peek(p) {
+	case .Assign:
+		next(p)
+		expr := parse_expr(p)
+		expect(p, .Semicolon)
+		return add_node(p, VarDecl{token, expr})
+	case .Colon:
+		next(p)
+		expr := parse_expr(p)
+		expect(p, .Semicolon)
+		return add_node(p, ConstDecl{token, expr})
+	case .Semicolon:
+		next(p)
+		return add_node(p, VarDecl{token, INVALID_NODE})
+	case:
+		panic(fmt.tprintf("invalid type annotation: %v", peek(p)))
+	}
 }
 
 parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
@@ -460,11 +574,23 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 			token := p.cursor
 			next(p)
 			next(p)
-			return parse_func_decl(p, token)
+
+			if peek(p) == .LParen {
+				next(p)
+				return parse_proc_decl(p, token)
+			} else {
+				return parse_const_decl(p, token)
+			}
 		case .Var:
 			token := p.cursor
 			next(p)
+			next(p)
 			return parse_var_decl(p, token)
+		case .Colon:
+			token := p.cursor
+			next(p)
+			next(p)
+			return parse_type_annotation(p, token)
 		case:
 			// It's an expression statement that starts with an identifier
 			expr := parse_expr(p)
@@ -482,9 +608,15 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 	case .While:
 		return parse_while_stmt(p)
 	case .Break:
-		panic("todo")
+		token := p.cursor
+		next(p)
+		expect(p, .Semicolon)
+		return add_node(p, BreakStmt{token})
 	case .Continue:
-		panic("todo")
+		token := p.cursor
+		next(p)
+		expect(p, .Semicolon)
+		return add_node(p, BreakStmt{token})
 	case:
 		// assume it must be expr stmt
 		expr := parse_expr(p)
@@ -501,12 +633,20 @@ skip_comments :: proc(p: ^Parser) {
 	}
 }
 
+consume_comments :: proc(p: ^Parser) {
+	if p.mode == .ParseComments {
+		panic("todo: parse comments")
+	} else {
+		skip_comments(p)
+	}
+}
+
 next :: proc(p: ^Parser) -> scanner.TokenIndex {
 	tok := next_token(p)
 	p.cursor = p.lookahead
-    p.lookahead = tok
+	p.lookahead = tok
 
-    skip_comments(p)
+	consume_comments(p)
 
 	return p.cursor
 }
@@ -543,10 +683,27 @@ token_to_string :: proc(p: ^Parser, token: scanner.TokenIndex) -> string {
 	return string(p.source[start:end])
 }
 
+token_to_float :: proc(p: ^Parser, token: scanner.TokenIndex) -> f64 {
+	value_str := token_to_string(p, token)
+	value := strconv.atof(value_str)
+	return value
+}
+
 token_to_int :: proc(p: ^Parser, token: scanner.TokenIndex) -> int {
 	value_str := token_to_string(p, token)
 	value := strconv.atoi(value_str)
 	return value
+}
+
+token_to_bool :: proc(p: ^Parser, token: scanner.TokenIndex) -> bool {
+	value_str := token_to_string(p, token)
+	if value_str == "true" {
+		return true
+	} else if value_str == "false" {
+		return false
+	} else {
+		panic(fmt.tprintf("invalid can't convert token to bool: %v", value_str))
+	}
 }
 
 print_tree :: proc(p: ^Parser) {
@@ -572,20 +729,37 @@ print_tree :: proc(p: ^Parser) {
 		case IdentLit:
 			print_indent(indent)
 			fmt.println("IdentLit:", token_to_string(p, v.token))
+		case StringLit:
+			print_indent(indent)
+			fmt.println("IdentLit:", token_to_string(p, v.token))
+		case RealLit:
+			print_indent(indent)
+			fmt.println("RealLit:", token_to_float(p, v.token))
 		case IntLit:
 			print_indent(indent)
 			fmt.println("IntLit:", token_to_int(p, v.token))
-		case FuncDecl:
+		case BoolLit:
 			print_indent(indent)
-			fmt.println("FuncDecl:", token_to_string(p, v.token))
-			for param in v.params {
-				print_node(p, param, indent + 2)
-			}
-			print_node(p, v.body, indent + 2)
+			fmt.println("BoolLit:", token_to_bool(p, v.token))
 		case VarDecl:
 			print_indent(indent)
 			fmt.println("VarDecl:", token_to_string(p, v.token))
 			print_node(p, v.expr, indent + 2)
+		case ConstDecl:
+			print_indent(indent)
+			fmt.println("ConstDecl:", token_to_string(p, v.token))
+			print_node(p, v.expr, indent + 2)
+		case ParamDecl:
+			print_indent(indent)
+			fmt.println("ParamDecl:", token_to_string(p, v.token))
+			print_node(p, v.expr, indent + 2)
+		case ProcDecl:
+			print_indent(indent)
+			fmt.println("ProcDecl:", token_to_string(p, v.token))
+			for param in v.params {
+				print_node(p, param, indent + 2)
+			}
+			print_node(p, v.body, indent + 2)
 		case ExprStmt:
 			print_indent(indent)
 			fmt.println("ExprStmt")
@@ -618,9 +792,15 @@ print_tree :: proc(p: ^Parser) {
 			fmt.println("WhileStmt")
 			print_node(p, v.cond, indent + 2)
 			print_node(p, v.body, indent + 2)
+		case BreakStmt:
+			print_indent(indent)
+			fmt.println("BreakStmt")
+		case ContinueStmt:
+			print_indent(indent)
+			fmt.println("ContinueStmt")
 		case CallExpr:
 			print_indent(indent)
-			fmt.println("CallExpr:", token_to_string(p, v.ident))
+			fmt.println("CallExpr:", token_to_string(p, v.token))
 			for arg in v.args {
 				print_node(p, arg, indent + 2)
 			}

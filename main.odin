@@ -2,6 +2,7 @@ package main
 
 import "parser"
 import "scanner"
+import "sema"
 
 import "core:fmt"
 import "core:os"
@@ -17,7 +18,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/for.lang")
+	handle, open_err := os.open("examples/break.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -38,10 +39,10 @@ main :: proc() {
 	p := parser.make_parser(source)
 	parse_tree := parser.parse(&p)
 
-    for node, i in parse_tree {
+	for node, i in parse_tree {
 		fmt.println(i, node)
 	}
 	fmt.println()
 
-    parser.print_tree(&p)
+	parser.print_tree(&p)
 }

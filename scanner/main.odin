@@ -289,7 +289,7 @@ next_token :: proc(t: ^Scanner) -> Token {
 			return make_token(t, .AmpersandEqual)
 		}
 		return make_token(t, .Ampersand)
-	case '(': 
+	case '(':
 		return make_token(t, .LParen)
 	case ')':
 		return make_token(t, .RParen)
@@ -334,8 +334,9 @@ next_token :: proc(t: ^Scanner) -> Token {
 		} else if peek(t) == '=' {
 			advance(t)
 			return make_token(t, .Var)
+		} else {
+			return make_token(t, .Colon)
 		}
-		return make_token(t, .Colon)
 	case ';':
 		return make_token(t, .Semicolon)
 	case '=':
@@ -409,3 +410,4 @@ consume_all :: proc(t: ^Scanner) -> [dynamic]Token {
 
 	return list
 }
+
