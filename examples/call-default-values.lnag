@@ -1,0 +1,11 @@
+module test {
+
+add :: (a := 0, b := 2) -> I32 {
+    return a + b;
+}
+
+main :: () -> I32 {
+    return add(1);
+}
+
+}

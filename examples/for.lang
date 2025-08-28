@@ -1,0 +1,34 @@
+module test {
+
+main :: () -> I32 {
+    acc := 0;
+    for i := 0; i < 10; i += 1 {
+        acc += i;
+    }
+
+    // Test: Missing initializer
+    i := 0;
+    for ; i < 10; i += 1 {
+        acc += 1;
+    }
+
+    // Test: Missing incrementer
+    for j := 0; j < 10; {
+        j += 1;
+    }
+
+    // Test: Missing initializer and incrementer (while loop)
+    k := 0;
+    for ; k < 10; {
+        k += 1;
+    }
+
+    // Test: Infinite loop (will be parsed, not executed)
+    for ;; {
+        // break; // TODO: Implement break statement parsing
+    }
+
+    return acc;
+}
+
+}
