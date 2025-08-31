@@ -5,6 +5,8 @@ import "../scanner"
 import "core:fmt"
 import "core:strconv"
 
+// Macro :: struct {}
+
 Module :: struct {
 	token: scanner.TokenIndex,
 	nodes: []NodeIndex,
@@ -47,8 +49,8 @@ ParamDecl :: struct {
 
 ProcDecl :: struct {
 	token:  scanner.TokenIndex,
-	params: []NodeIndex,
 	body:   NodeIndex,
+	params: []NodeIndex,
 }
 
 ExprStmt :: struct {
@@ -73,17 +75,11 @@ IfStmt :: struct {
 	else_: NodeIndex,
 }
 
-ForStmt :: struct {
+LoopStmt :: struct {
 	token: scanner.TokenIndex,
 	init:  NodeIndex,
 	cond:  NodeIndex,
 	incr:  NodeIndex,
-	body:  NodeIndex,
-}
-
-WhileStmt :: struct {
-	token: scanner.TokenIndex,
-	cond:  NodeIndex,
 	body:  NodeIndex,
 }
 
@@ -96,8 +92,9 @@ ContinueStmt :: struct {
 }
 
 CallExpr :: struct {
-	token: scanner.TokenIndex,
-	args:  []NodeIndex,
+	token:  scanner.TokenIndex,
+	callee: NodeIndex,
+	args:   []NodeIndex,
 }
 
 UnaryExpr :: struct {
@@ -126,8 +123,7 @@ Node :: union {
 	BlockStmt,
 	ReturnStmt,
 	IfStmt,
-	ForStmt,
-	WhileStmt,
+	LoopStmt,
 	BreakStmt,
 	ContinueStmt,
 	CallExpr,
@@ -211,13 +207,16 @@ parse_type :: proc(p: ^Parser) -> NodeIndex {
 	if peek(p) == .I32 {
 		token := p.cursor
 		next(p)
-		return add_node(p, IdentLit{token})
+		return 0
+		//return add_node(p, IdentLit{token})
 	}
 
 	panic(fmt.tprintf("ivalid type identifier: %v", peek(p)))
 }
 
 parse_call_expr :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	callee := NodeIndex{}
+
 	args := make([dynamic]NodeIndex, 0, 1)
 	for peek(p) != .RParen {
 		append(&args, parse_expr(p))
@@ -229,7 +228,7 @@ parse_call_expr :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	}
 	next(p)
 
-	return add_node(p, CallExpr{token, args[:]})
+	return add_node(p, CallExpr{token, callee, args[:]})
 }
 
 parse_atom :: proc(p: ^Parser) -> NodeIndex {
@@ -239,12 +238,12 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 		token := p.cursor
 		next(p)
 
-		if peek(p) == .LParen {
-			next(p)
-			return parse_call_expr(p, token)
-		} else {
-			return add_node(p, IdentLit{token})
-		}
+		//if peek(p) == .LParen {
+		//	next(p)
+		//	return parse_call_expr(p, token)
+		//} else {
+		return add_node(p, IdentLit{token})
+	//}
 	case .String:
 		panic("todo")
 	case .Real:
@@ -383,23 +382,7 @@ is_right_assoc :: proc(op: scanner.TokenKind) -> bool {
 }
 
 parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
-	left := parse_atom(p)
-	op := peek(p)
-	prec := infix_prec(op)
-
-	for is_binary_op(op) && prec >= min_prec {
-		token := p.cursor
-		next(p)
-
-		next_prec := prec if is_right_assoc(op) else prec + 1
-
-		right := parse_expr(p, next_prec)
-		left = add_node(p, BinaryExpr{token, left, right})
-
-		op = peek(p)
-	}
-
-	return left
+	return 0
 }
 
 parse_block_stmt :: proc(p: ^Parser) -> NodeIndex {
@@ -474,15 +457,7 @@ parse_for_stmt :: proc(p: ^Parser) -> NodeIndex {
 	// mandatory body
 	body := parse_decl_or_stmt(p)
 
-	return add_node(p, ForStmt{token, init, cond, incr, body})
-}
-
-parse_while_stmt :: proc(p: ^Parser) -> NodeIndex {
-	token := p.cursor
-	next(p)
-	cond := parse_expr(p)
-	body := parse_decl_or_stmt(p)
-	return add_node(p, WhileStmt{token, cond, body})
+	return add_node(p, LoopStmt{token, init, cond, incr, body})
 }
 
 parse_param_decl :: proc(p: ^Parser) -> NodeIndex {
@@ -527,7 +502,7 @@ parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 
 	body := parse_decl_or_stmt(p)
 
-	return add_node(p, ProcDecl{token, params[:], body})
+	return add_node(p, ProcDecl{token, body, params[:]})
 }
 
 parse_const_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
@@ -603,10 +578,8 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 		return parse_return_stmt(p)
 	case .If:
 		return parse_if_stmt(p)
-	case .For:
+	case .Loop:
 		return parse_for_stmt(p)
-	case .While:
-		return parse_while_stmt(p)
 	case .Break:
 		token := p.cursor
 		next(p)
@@ -780,17 +753,12 @@ print_tree :: proc(p: ^Parser) {
 			print_node(p, v.cond, indent + 2)
 			print_node(p, v.then, indent + 2)
 			print_node(p, v.else_, indent + 2)
-		case ForStmt:
+		case LoopStmt:
 			print_indent(indent)
-			fmt.println("ForStmt")
+			fmt.println("LoopStmt")
 			print_node(p, v.init, indent + 2)
 			print_node(p, v.cond, indent + 2)
 			print_node(p, v.incr, indent + 2)
-			print_node(p, v.body, indent + 2)
-		case WhileStmt:
-			print_indent(indent)
-			fmt.println("WhileStmt")
-			print_node(p, v.cond, indent + 2)
 			print_node(p, v.body, indent + 2)
 		case BreakStmt:
 			print_indent(indent)

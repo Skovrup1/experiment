@@ -18,7 +18,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/break.lang")
+	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -45,4 +45,17 @@ main :: proc() {
 	fmt.println()
 
 	parser.print_tree(&p)
+	fmt.println()
+
+	fmt.println("size_of(parser.Node) =", size_of(parser.Node))
+	fmt.println()
+
+	a := sema.make_analyzer(&p)
+	tac := sema.analyze(&a)
+
+    sema.print_insts(&a)
+	fmt.println()
+
+	fmt.println("size_of(sema.Inst) =", size_of(sema.Inst))
+	fmt.println()
 }

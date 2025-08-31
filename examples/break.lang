@@ -1,0 +1,11 @@
+module test {
+
+main :: () -> I32 {
+    while true {
+        break;
+    }
+
+    return 0;
+}
+
+}

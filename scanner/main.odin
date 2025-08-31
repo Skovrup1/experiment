@@ -75,8 +75,7 @@ TokenKind :: enum u8 {
 	// keywords
 	Module,
 	Return,
-	For,
-	While,
+	Loop,
 	If,
 	Else,
 	Break,
@@ -113,8 +112,7 @@ make_keywords :: proc() -> map[string]TokenKind {
 
 	keywords["module"] = .Module
 	keywords["return"] = .Return
-	keywords["for"] = .For
-	keywords["while"] = .While
+	keywords["loop"] = .Loop
 	keywords["if"] = .If
 	keywords["else"] = .Else
 	keywords["break"] = .Break
@@ -122,7 +120,7 @@ make_keywords :: proc() -> map[string]TokenKind {
 	keywords["struct"] = .Struct
 	keywords["true"] = .True
 	keywords["false"] = .False
-	keywords["Void"] = .Void
+	keywords["Void"] = .Void // maybe change to ()
 	keywords["F32"] = .F32
 	keywords["I32"] = .I32
 	keywords["Bool"] = .Bool
