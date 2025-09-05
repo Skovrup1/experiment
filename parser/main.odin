@@ -32,6 +32,16 @@ BoolLit :: struct {
 	token: scanner.TokenIndex,
 }
 
+StructLit :: struct {
+	token:  scanner.TokenIndex,
+	values: []NodeIndex,
+}
+
+ArrayLit :: struct {
+	token:  scanner.TokenIndex,
+	values: []NodeIndex,
+}
+
 VarDecl :: struct {
 	token: scanner.TokenIndex,
 	expr:  NodeIndex,
@@ -51,6 +61,11 @@ ProcDecl :: struct {
 	token:  scanner.TokenIndex,
 	body:   NodeIndex,
 	params: []NodeIndex,
+}
+
+StructDecl :: struct {
+	token:   scanner.TokenIndex,
+	members: []NodeIndex,
 }
 
 ExprStmt :: struct {
@@ -104,9 +119,9 @@ MemberExpr :: struct {
 }
 
 IndexExpr :: struct {
-	token: scanner.TokenIndex,
-	ident: NodeIndex,
-	expr:  NodeIndex,
+	token:  scanner.TokenIndex,
+	base:   NodeIndex,
+	offset: NodeIndex,
 }
 
 UnaryExpr :: struct {
@@ -127,10 +142,13 @@ Node :: union {
 	RealLit,
 	IntLit,
 	BoolLit,
+	StructLit,
+	ArrayLit,
 	VarDecl,
 	ConstDecl,
 	ParamDecl,
 	ProcDecl,
+	StructDecl,
 	ExprStmt,
 	BlockStmt,
 	ReturnStmt,
@@ -140,7 +158,7 @@ Node :: union {
 	ContinueStmt,
 	CallExpr,
 	MemberExpr,
-	//RefExpr,    // *& for pointers
+	//RefExpr,
 	IndexExpr,
 	UnaryExpr,
 	BinaryExpr,
@@ -149,6 +167,7 @@ Node :: union {
 NodeIndex :: distinct u32
 INVALID_NODE :: max(NodeIndex)
 
+// change to flags
 ParseMode :: enum {
 	IgnoreComments,
 	ParseComments,
@@ -170,23 +189,32 @@ make_parser :: proc(source: []u8) -> Parser {
 	tokens := make([dynamic]scanner.Token)
 	nodes := make([dynamic]Node)
 
-	append(&tokens, scanner.next_token(&scan))
-	cursor := scanner.TokenIndex(len(tokens) - 1)
-	append(&tokens, scanner.next_token(&scan))
-	lookahead := scanner.TokenIndex(len(tokens) - 1)
+	parser := Parser{source, scan, tokens, nodes, 0, 0, 0, .IgnoreComments}
 
-	return Parser{source, scan, tokens, nodes, cursor, lookahead, 0, .IgnoreComments}
+	next(&parser)
+	next(&parser)
+
+	return parser
 }
 
-next_token :: proc(p: ^Parser) -> scanner.TokenIndex {
+next :: proc(p: ^Parser) -> scanner.TokenIndex {
 	tok := scanner.next_token(&p.scan)
 
+	fmt.println(tok)
+
 	if tok.kind == .Error {
-		panic("error")
+		panic("error from scanner")
 	}
 
 	append(&p.tokens, tok)
-	return scanner.TokenIndex(len(p.tokens) - 1)
+	tok_index := scanner.TokenIndex(len(p.tokens) - 1)
+
+	p.cursor = p.lookahead
+	p.lookahead = tok_index
+
+	consume_comments(p)
+
+	return p.cursor
 }
 
 add_node :: proc(p: ^Parser, node: Node) -> NodeIndex {
@@ -216,14 +244,31 @@ parse :: proc(p: ^Parser) -> []Node {
 }
 
 parse_type :: proc(p: ^Parser) -> NodeIndex {
-	if peek(p) == .I32 {
+	allow(p, .Mul) // ptr
+
+	#partial switch peek(p) {
+	case .Identifier, .Void, .F32, .I32, .Bool:
 		token := p.cursor
 		next(p)
-		return 0
-		//return add_node(p, IdentLit{token})
+		return add_node(p, IdentLit{token})
+	case:
+		panic(fmt.tprintf("invalid type identifier: %v", peek(p)))
 	}
+}
 
-	panic(fmt.tprintf("ivalid type identifier: %v", peek(p)))
+parse_struct_lit :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	values := make([dynamic]NodeIndex, 0, 1)
+	for peek(p) != .RBrace {
+		append(&values, parse_expr(p))
+		if peek(p) == .Comma {
+			next(p)
+		} else {
+			break
+		}
+	}
+	next(p)
+
+	return add_node(p, StructLit{token, values[:]})
 }
 
 parse_atom :: proc(p: ^Parser) -> NodeIndex {
@@ -232,6 +277,11 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 	case .Identifier:
 		token := p.cursor
 		next(p)
+
+		if peek(p) == .LBrace {
+			next(p)
+			return parse_struct_lit(p, token)
+		}
 
 		return add_node(p, IdentLit{token})
 	case .String:
@@ -246,7 +296,28 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 		token := p.cursor
 		next(p)
 		return add_node(p, BoolLit{token})
-	case .Minus, .Not:
+	case .LBrace:
+		token := p.cursor
+		next(p)
+		return parse_struct_lit(p, token)
+	case .LBracket:
+		token := p.cursor
+		next(p)
+
+		values := make([dynamic]NodeIndex, 0, 1)
+		for peek(p) != .RBracket {
+			append(&values, parse_expr(p))
+			if peek(p) == .Comma {
+				next(p)
+			} else {
+				break
+			}
+		}
+		next(p)
+
+		return add_node(p, ArrayLit{token, values[:]})
+	// prefix unary expressions
+	case .Minus, .Not, .Ampersand:
 		token := p.cursor
 		next(p)
 		expr := parse_expr(p, prefix_prec(atom))
@@ -270,7 +341,6 @@ prefix_prec :: proc(op: scanner.TokenKind) -> int {
 	}
 }
 
-// note: should this be binary_prec then the other be unary_prec?
 infix_prec :: proc(op: scanner.TokenKind) -> int {
 	#partial switch op {
 	case .Assign,
@@ -306,7 +376,7 @@ infix_prec :: proc(op: scanner.TokenKind) -> int {
 
 postfix_prec :: proc(op: scanner.TokenKind) -> int {
 	#partial switch op {
-	case .LParen, .LBracket, .Period:
+	case .LParen, .LBracket, .Period, .Deref:
 		return 8
 	case:
 		return 0
@@ -375,7 +445,6 @@ is_right_associative :: proc(op: scanner.TokenKind) -> bool {
 parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
 	left := parse_atom(p)
 
-	// postfix expressions
 	for postfix_prec(peek(p)) > min_prec {
 		#partial switch peek(p) {
 		case .LParen:
@@ -396,19 +465,22 @@ parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
 			token := p.cursor
 			next(p)
 			ident := parse_atom(p)
-			left := add_node(p, MemberExpr{token, left, ident})
+			left = add_node(p, MemberExpr{token, left, ident})
+		case .Deref:
+			token := p.cursor
+			next(p)
+			left = add_node(p, UnaryExpr{token, left})
 		case .LBracket:
 			token := p.cursor
 			next(p)
 			expr := parse_expr(p)
 			expect(p, .RBracket)
-			left := add_node(p, IndexExpr{token, left, expr})
+			left = add_node(p, IndexExpr{token, left, expr})
 		case:
 			break
 		}
 	}
 
-	// infix expressions
 	for is_binary_op(peek(p)) && infix_prec(peek(p)) >= min_prec {
 		token := p.cursor
 
@@ -459,45 +531,39 @@ parse_if_stmt :: proc(p: ^Parser) -> NodeIndex {
 	return add_node(p, IfStmt{token, cond, then, else_})
 }
 
-parse_for_init :: proc(p: ^Parser) -> NodeIndex {
-	if peek(p) == .Identifier && peek_next(p) == .Var {
-		token := p.cursor
-		next(p)
-		next(p)
-		expr := parse_expr(p)
-		return add_node(p, VarDecl{token, expr})
-	}
-
-	return parse_expr(p)
-}
-
 parse_for_stmt :: proc(p: ^Parser) -> NodeIndex {
 	token := p.cursor
 	next(p)
 
-	// optional initializer.
-	init: NodeIndex = INVALID_NODE
-	if peek(p) != .Semicolon {
-		init = parse_for_init(p)
+	init := INVALID_NODE
+	cond := INVALID_NODE
+	incr := INVALID_NODE
+
+	skip_all := allow(p, .LBrace)
+	if !skip_all {
+		if peek(p) != .Semicolon {
+			if peek(p) == .Identifier && peek_next(p) == .Var {
+				token := p.cursor
+				next(p)
+				next(p)
+				expr := parse_expr(p)
+				init = add_node(p, VarDecl{token, expr})
+			} else {
+				init = parse_expr(p)
+			}
+		}
+		expect(p, .Semicolon)
+
+		if peek(p) != .Semicolon {
+			cond = parse_expr(p)
+		}
+		expect(p, .Semicolon)
+
+		if peek(p) != .LBrace {
+			incr = parse_expr(p)
+		}
 	}
 
-	expect(p, .Semicolon)
-
-	// optional condition.
-	cond: NodeIndex = INVALID_NODE
-	if peek(p) != .Semicolon {
-		cond = parse_expr(p)
-	}
-
-	expect(p, .Semicolon)
-
-	// optional increment expression.
-	incr: NodeIndex = INVALID_NODE
-	if peek(p) != .LBrace {
-		incr = parse_expr(p)
-	}
-
-	// mandatory body
 	body := parse_decl_or_stmt(p)
 
 	return add_node(p, LoopStmt{token, init, cond, incr, body})
@@ -548,6 +614,25 @@ parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	return add_node(p, ProcDecl{token, body, params[:]})
 }
 
+parse_struct_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
+	expect(p, .LBrace)
+
+	members := make([dynamic]NodeIndex, 0, 1)
+	for peek(p) != .RBrace {
+		// note: consider making a dedicated function
+		// for parsing struct members
+		append(&members, parse_param_decl(p))
+		if peek(p) == .Comma {
+			next(p)
+		} else {
+			break
+		}
+	}
+	next(p)
+
+	return add_node(p, StructDecl{token, members[:]})
+}
+
 parse_const_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	expr := parse_expr(p)
 	expect(p, .Semicolon)
@@ -593,10 +678,14 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 			next(p)
 			next(p)
 
-			if peek(p) == .LParen {
+			#partial switch peek(p) {
+			case .LParen:
 				next(p)
 				return parse_proc_decl(p, token)
-			} else {
+			case .Struct:
+				next(p)
+				return parse_struct_decl(p, token)
+			case:
 				return parse_const_decl(p, token)
 			}
 		case .Var:
@@ -643,9 +732,7 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 
 skip_comments :: proc(p: ^Parser) {
 	for peek(p) == .LineComment || peek(p) == .BlockComment {
-		tok := next_token(p)
-		p.cursor = p.lookahead
-		p.lookahead = tok
+		next(p)
 	}
 }
 
@@ -655,16 +742,6 @@ consume_comments :: proc(p: ^Parser) {
 	} else {
 		skip_comments(p)
 	}
-}
-
-next :: proc(p: ^Parser) -> scanner.TokenIndex {
-	tok := next_token(p)
-	p.cursor = p.lookahead
-	p.lookahead = tok
-
-	consume_comments(p)
-
-	return p.cursor
 }
 
 peek :: proc(p: ^Parser) -> scanner.TokenKind {
@@ -757,6 +834,18 @@ print_tree :: proc(p: ^Parser) {
 		case BoolLit:
 			print_indent(indent)
 			fmt.println("BoolLit:", token_to_bool(p, v.token))
+		case StructLit:
+			print_indent(indent)
+			fmt.println("StructLit")
+			for value in v.values {
+				print_node(p, value, indent + 2)
+			}
+		case ArrayLit:
+			print_indent(indent)
+			fmt.println("ArrayLit")
+			for value in v.values {
+				print_node(p, value, indent + 2)
+			}
 		case VarDecl:
 			print_indent(indent)
 			fmt.println("VarDecl:", token_to_string(p, v.token))
@@ -776,6 +865,12 @@ print_tree :: proc(p: ^Parser) {
 				print_node(p, param, indent + 2)
 			}
 			print_node(p, v.body, indent + 2)
+		case StructDecl:
+			print_indent(indent)
+			fmt.println("StructDecl:", token_to_string(p, v.token))
+			for member in v.members {
+				print_node(p, member, indent + 2)
+			}
 		case ExprStmt:
 			print_indent(indent)
 			fmt.println("ExprStmt")
@@ -830,8 +925,8 @@ print_tree :: proc(p: ^Parser) {
 		case IndexExpr:
 			print_indent(indent)
 			fmt.println("IndexExpr:")
-			print_node(p, v.ident, indent + 2)
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.base, indent + 2)
+			print_node(p, v.offset, indent + 2)
 		case BinaryExpr:
 			print_indent(indent)
 			fmt.println("BinaryExpr:", token_to_string(p, v.token))

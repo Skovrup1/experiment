@@ -1,0 +1,9 @@
+module test {
+
+main :: () -> *I32 {
+    a := 0;
+    b := &a; // reference
+    return b.*; // dereference
+}
+
+}

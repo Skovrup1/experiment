@@ -146,7 +146,6 @@ Not :: struct {
 	expr: InstIndex,
 }
 
-
 Param :: struct {
 	value: InstIndex,
 }
@@ -298,6 +297,10 @@ analyze :: proc(a: ^Analyzer) -> []Inst {
 
 		case parser.BoolLit:
 
+		case parser.StructLit:
+
+		case parser.ArrayLit:
+
 		case parser.VarDecl:
 			ident := parser.token_to_string(a.parser, v.token)
 
@@ -339,6 +342,8 @@ analyze :: proc(a: ^Analyzer) -> []Inst {
 			}
 			analyze_node(a, v.body)
 			leave_scope(a)
+
+		case parser.StructDecl:
 
 		case parser.ExprStmt:
 			analyze_node(a, v.expr)
@@ -397,7 +402,7 @@ analyze :: proc(a: ^Analyzer) -> []Inst {
 		case parser.MemberExpr:
 			panic("todo")
 
-		case parser.IndexExpr:
+        case parser.IndexExpr:
 			panic("todo")
 
 		case parser.UnaryExpr:

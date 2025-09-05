@@ -6,12 +6,12 @@ Vec2 :: struct {
 }
 
 make_vec2 :: (x: I32, y: I32) -> Vec2 {
-    return {1, 2}
+    return {1, 2};
 }
 
 main :: () -> I32 {
-    a := Vec2{1, 2}
-    return a.x
+    a := Vec2{1, 2};
+    return a.x;
 }
 
 }

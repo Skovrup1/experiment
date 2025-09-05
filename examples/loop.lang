@@ -29,6 +29,11 @@ main :: () -> I32 {
         break;
     }
 
+    // infinite loop 2
+    loop {
+        break;
+    }
+
     return acc;
 }
 

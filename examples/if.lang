@@ -1,6 +1,6 @@
 module test {
 
-main :: () -> I32 {
+a :: () -> I32 {
     if 1 == 2 {
         return 3;
     } else {
@@ -8,12 +8,18 @@ main :: () -> I32 {
     }
 }
 
-main :: () -> I32 {
+b :: () -> I32 {
     if 1 == 2 {
         return 3;
     }
 
     return 4;
 }
+
+/* todo
+c :: () -> I32 {
+    return if 1 == 2 do 3 else 4;
+}
+*/
 
 }

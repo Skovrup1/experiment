@@ -29,6 +29,8 @@ TokenKind :: enum u8 {
 	LBrace, // {
 	RBrace, // }
 
+    Deref, // .*
+
 	// assignment & comparison operators
 	Const, // ::
 	Var, // :=
@@ -312,6 +314,10 @@ next_token :: proc(t: ^Scanner) -> Token {
 		}
 		return make_token(t, .Minus)
 	case '.':
+		if peek(t) == '*' {
+			advance(t)
+			return make_token(t, .Deref)
+		}
 		return make_token(t, .Period)
 	case '/':
 		if peek(t) == '/' {
@@ -408,4 +414,3 @@ consume_all :: proc(t: ^Scanner) -> [dynamic]Token {
 
 	return list
 }
-
