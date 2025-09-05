@@ -97,6 +97,18 @@ CallExpr :: struct {
 	args:   []NodeIndex,
 }
 
+MemberExpr :: struct {
+	token: scanner.TokenIndex,
+	ident: NodeIndex,
+	expr:  NodeIndex,
+}
+
+IndexExpr :: struct {
+	token: scanner.TokenIndex,
+	ident: NodeIndex,
+	expr:  NodeIndex,
+}
+
 UnaryExpr :: struct {
 	token: scanner.TokenIndex,
 	expr:  NodeIndex,
@@ -127,9 +139,9 @@ Node :: union {
 	BreakStmt,
 	ContinueStmt,
 	CallExpr,
-	//MemberExpr, // . for structs
+	MemberExpr,
 	//RefExpr,    // *& for pointers
-	//AccessExpr, // [] for arrays
+	IndexExpr,
 	UnaryExpr,
 	BinaryExpr,
 }
@@ -214,23 +226,6 @@ parse_type :: proc(p: ^Parser) -> NodeIndex {
 	panic(fmt.tprintf("ivalid type identifier: %v", peek(p)))
 }
 
-parse_call_expr :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
-	callee := NodeIndex{}
-
-	args := make([dynamic]NodeIndex, 0, 1)
-	for peek(p) != .RParen {
-		append(&args, parse_expr(p))
-		if peek(p) == .Comma {
-			next(p)
-		} else {
-			break
-		}
-	}
-	next(p)
-
-	return add_node(p, CallExpr{token, callee, args[:]})
-}
-
 parse_atom :: proc(p: ^Parser) -> NodeIndex {
 	atom := peek(p)
 	#partial switch atom {
@@ -238,12 +233,7 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 		token := p.cursor
 		next(p)
 
-		//if peek(p) == .LParen {
-		//	next(p)
-		//	return parse_call_expr(p, token)
-		//} else {
 		return add_node(p, IdentLit{token})
-	//}
 	case .String:
 		panic("todo")
 	case .Real:
@@ -280,6 +270,7 @@ prefix_prec :: proc(op: scanner.TokenKind) -> int {
 	}
 }
 
+// note: should this be binary_prec then the other be unary_prec?
 infix_prec :: proc(op: scanner.TokenKind) -> int {
 	#partial switch op {
 	case .Assign,
@@ -315,7 +306,7 @@ infix_prec :: proc(op: scanner.TokenKind) -> int {
 
 postfix_prec :: proc(op: scanner.TokenKind) -> int {
 	#partial switch op {
-	case .LBracket, .LParen:
+	case .LParen, .LBracket, .Period:
 		return 8
 	case:
 		return 0
@@ -361,7 +352,7 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	}
 }
 
-is_right_assoc :: proc(op: scanner.TokenKind) -> bool {
+is_right_associative :: proc(op: scanner.TokenKind) -> bool {
 	#partial switch op {
 	case .Assign,
 	     .PlusEqual,
@@ -382,7 +373,59 @@ is_right_assoc :: proc(op: scanner.TokenKind) -> bool {
 }
 
 parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
-	return 0
+	left := parse_atom(p)
+
+	// postfix expressions
+	for postfix_prec(peek(p)) > min_prec {
+		#partial switch peek(p) {
+		case .LParen:
+			token := p.cursor
+			next(p)
+			args := make([dynamic]NodeIndex, 0, 1)
+			for peek(p) != .RParen {
+				append(&args, parse_expr(p))
+				if peek(p) == .Comma {
+					next(p)
+				} else {
+					break
+				}
+			}
+			expect(p, .RParen)
+			left = add_node(p, CallExpr{token, left, args[:]})
+		case .Period:
+			token := p.cursor
+			next(p)
+			ident := parse_atom(p)
+			left := add_node(p, MemberExpr{token, left, ident})
+		case .LBracket:
+			token := p.cursor
+			next(p)
+			expr := parse_expr(p)
+			expect(p, .RBracket)
+			left := add_node(p, IndexExpr{token, left, expr})
+		case:
+			break
+		}
+	}
+
+	// infix expressions
+	for is_binary_op(peek(p)) && infix_prec(peek(p)) >= min_prec {
+		token := p.cursor
+
+		next_min_prec: int
+		if is_right_associative(peek(p)) {
+			next_min_prec = min_prec
+		} else {
+			next_min_prec = min_prec + 1
+		}
+
+		next(p)
+		right := parse_expr(p, next_min_prec)
+
+		left = add_node(p, BinaryExpr{token, left, right})
+	}
+
+	return left
 }
 
 parse_block_stmt :: proc(p: ^Parser) -> NodeIndex {
@@ -769,9 +812,26 @@ print_tree :: proc(p: ^Parser) {
 		case CallExpr:
 			print_indent(indent)
 			fmt.println("CallExpr:", token_to_string(p, v.token))
-			for arg in v.args {
-				print_node(p, arg, indent + 2)
+			print_indent(indent)
+			fmt.println("  Callee:")
+			print_node(p, v.callee, indent + 4)
+			if len(v.args) > 0 {
+				print_indent(indent)
+				fmt.println("  Args:")
+				for arg in v.args {
+					print_node(p, arg, indent + 4)
+				}
 			}
+		case MemberExpr:
+			print_indent(indent)
+			fmt.println("MemberExpr:")
+			print_node(p, v.ident, indent + 2)
+			print_node(p, v.expr, indent + 2)
+		case IndexExpr:
+			print_indent(indent)
+			fmt.println("IndexExpr:")
+			print_node(p, v.ident, indent + 2)
+			print_node(p, v.expr, indent + 2)
 		case BinaryExpr:
 			print_indent(indent)
 			fmt.println("BinaryExpr:", token_to_string(p, v.token))

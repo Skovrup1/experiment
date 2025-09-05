@@ -113,18 +113,15 @@ Lt :: struct {
 }
 
 Le :: struct {
-	// Less Than or Equal (<=)
 	left:  InstIndex,
 	right: InstIndex,
 }
 
-// greater than
 Gt :: struct {
 	left:  InstIndex,
 	right: InstIndex,
 }
 
-// greater than or equal
 Ge :: struct {
 	left:  InstIndex,
 	right: InstIndex,
@@ -180,7 +177,7 @@ Inst :: union {
 	Store,
 	// constants
 	ConstInt,
-	// Arithmetic Ops
+	// arithmetic ops
 	Add,
 	Sub,
 	Mul,
@@ -397,6 +394,12 @@ analyze :: proc(a: ^Analyzer) -> []Inst {
 			}*/
 
 			return Value{add_inst(a, Call{callee_index})}
+		case parser.MemberExpr:
+			panic("todo")
+
+		case parser.IndexExpr:
+			panic("todo")
+
 		case parser.UnaryExpr:
 			panic("todo")
 

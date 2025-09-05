@@ -50,6 +50,7 @@ main :: proc() {
 	fmt.println("size_of(parser.Node) =", size_of(parser.Node))
 	fmt.println()
 
+    /*
 	a := sema.make_analyzer(&p)
 	tac := sema.analyze(&a)
 
@@ -58,4 +59,5 @@ main :: proc() {
 
 	fmt.println("size_of(sema.Inst) =", size_of(sema.Inst))
 	fmt.println()
+    */
 }

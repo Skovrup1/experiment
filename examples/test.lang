@@ -5,7 +5,7 @@ a :: () -> I32 {
 }
 
 main :: () -> I32 {
-    return a();
+    return a()();
 }
 
 }
