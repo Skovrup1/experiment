@@ -231,13 +231,19 @@ parse :: proc(p: ^Parser) -> []Node {
 		expect(p, .LBrace)
 
 		stmts := make([dynamic]NodeIndex, 0, 1)
-		for peek(p) != .RBrace {
+		for peek(p) != .RBrace && peek(p) != .Eof {
 			append(&stmts, parse_decl_or_stmt(p))
 		}
-		next(p)
+		expect(p, .RBrace)
 		add_node(p, Module{token, stmts[:]})
 	case:
-		panic(fmt.tprintf("invalid module: %v", peek(p)))
+		token := p.cursor
+		stmts := make([dynamic]NodeIndex, 0, 1)
+
+		for peek(p) != .Eof {
+			append(&stmts, parse_decl_or_stmt(p))
+		}
+		add_node(p, Module{token, stmts[:]})
 	}
 
 	return p.nodes[:]
@@ -728,9 +734,10 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 		return add_node(p, BreakStmt{token})
 	case:
 		// assume it must be expr stmt
+		token := p.cursor
 		expr := parse_expr(p)
 		expect(p, .Semicolon)
-		return add_node(p, ExprStmt{666, expr})
+		return add_node(p, ExprStmt{token, expr})
 	}
 }
 

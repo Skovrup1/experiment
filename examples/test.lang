@@ -1,11 +1,7 @@
-module test {
-
 a :: () -> I32 {
     return 0;
 }
 
 main :: () -> I32 {
     return a()();
-}
-
 }

@@ -1,5 +1,3 @@
-module test {
-
 main :: () -> I32 {
     a := 1; // variable initalization
 
@@ -13,6 +11,4 @@ main :: () -> I32 {
     e: I32 : 2; // constant with type annotation
 
     return 0;
-}
-
 }
