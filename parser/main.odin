@@ -285,9 +285,13 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 
 		return add_node(p, IdentLit{token})
 	case .String:
-		panic("todo")
+		token := p.cursor
+		next(p)
+		return add_node(p, StringLit{token})
 	case .Real:
-		panic("todo")
+		token := p.cursor
+		next(p)
+		return add_node(p, RealLit{token})
 	case .Integer:
 		token := p.cursor
 		next(p)
@@ -824,7 +828,7 @@ print_tree :: proc(p: ^Parser) {
 			fmt.println("IdentLit:", token_to_string(p, v.token))
 		case StringLit:
 			print_indent(indent)
-			fmt.println("IdentLit:", token_to_string(p, v.token))
+			fmt.println("StringLit:", token_to_string(p, v.token))
 		case RealLit:
 			print_indent(indent)
 			fmt.println("RealLit:", token_to_float(p, v.token))

@@ -28,8 +28,7 @@ TokenKind :: enum u8 {
 	RBracket, // ]
 	LBrace, // {
 	RBrace, // }
-
-    Deref, // .*
+	Deref, // .*
 
 	// assignment & comparison operators
 	Const, // ::
@@ -264,6 +263,13 @@ next_token :: proc(t: ^Scanner) -> Token {
 	}
 
 	switch r {
+	case '"':
+		advance(t)
+		for peek(t) != '"' {
+			advance(t)
+		}
+        advance(t)
+		return make_token(t, .String)
 	case '!':
 		if peek(t) == '=' {
 			advance(t)
