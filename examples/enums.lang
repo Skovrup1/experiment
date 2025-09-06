@@ -5,6 +5,13 @@ fruit :: enum {
     Orange,
 }
 
+// define size of enum
+fruitV2 :: enum u8 {
+    Apple,
+    Pear,
+    Orange,
+}
+
 main :: () -> .I32 {
     a := fruit.Apple;
     b := fruit.Pear;

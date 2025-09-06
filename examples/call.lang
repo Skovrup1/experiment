@@ -23,5 +23,10 @@ main :: () -> I32 {
 
     d();
 
+    /* todo
+    // named arguments
+    c(b = 1);
+    */
+
     return 0;
 }

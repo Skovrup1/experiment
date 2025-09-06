@@ -1,0 +1,9 @@
+// todo
+
+NumberType :: I32
+
+main :: () -> I32 {
+    b: NumberType = 2;
+
+    return b;
+}

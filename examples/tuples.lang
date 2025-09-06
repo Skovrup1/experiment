@@ -1,0 +1,13 @@
+// todo
+
+make_pair :: (a: I32, b: i32) -> (I32, I32) {
+    return (a, b);
+}
+
+main :: () -> I32 {
+    (a, b) := make_pair(1, 2);
+    ab := make_pair(1, 2);
+    a = ab.0;
+
+    return a;
+}
