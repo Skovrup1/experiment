@@ -14,7 +14,8 @@ foo :: () -> Vec2 {
 }
 */
 
-// default value
+// note: should structs support default values?
+// How will it look like together with zero initialization and undefined initialization?
 Vec3 :: struct {
     x: I32,
     y: I32,
