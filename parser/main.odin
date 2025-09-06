@@ -57,6 +57,11 @@ ParamDecl :: struct {
 	expr:  NodeIndex,
 }
 
+MemberDecl :: struct {
+	token: scanner.TokenIndex,
+	expr:  NodeIndex,
+}
+
 ProcDecl :: struct {
 	token:  scanner.TokenIndex,
 	body:   NodeIndex,
@@ -147,6 +152,7 @@ Node :: union {
 	VarDecl,
 	ConstDecl,
 	ParamDecl,
+	MemberDecl,
 	ProcDecl,
 	StructDecl,
 	ExprStmt,
@@ -166,7 +172,7 @@ Node :: union {
 NodeIndex :: distinct u32
 INVALID_NODE :: max(NodeIndex)
 
-// change to flags
+// note: change to flags
 ParseMode :: enum {
 	IgnoreComments,
 	ParseComments,
@@ -196,6 +202,20 @@ make_parser :: proc(source: []u8) -> Parser {
 	return parser
 }
 
+skip_comments :: proc(p: ^Parser) {
+	for peek(p) == .LineComment || peek(p) == .BlockComment {
+		next(p)
+	}
+}
+
+consume_comments :: proc(p: ^Parser) {
+	if p.mode == .ParseComments {
+		panic("todo: parse comments")
+	} else {
+		skip_comments(p)
+	}
+}
+
 next :: proc(p: ^Parser) -> scanner.TokenIndex {
 	tok := scanner.next_token(&p.scan)
 
@@ -214,6 +234,31 @@ next :: proc(p: ^Parser) -> scanner.TokenIndex {
 	consume_comments(p)
 
 	return p.cursor
+}
+
+peek :: proc(p: ^Parser) -> scanner.TokenKind {
+	return p.tokens[p.cursor].kind
+}
+
+peek_next :: proc(p: ^Parser) -> scanner.TokenKind {
+	return p.tokens[p.lookahead].kind
+}
+
+expect :: proc(p: ^Parser, expected: scanner.TokenKind, loc := #caller_location) {
+	if peek(p) != expected {
+		panic(fmt.tprintf("expected token %v, but got %v, at %v", expected, peek(p), loc))
+	}
+
+	next(p)
+}
+
+allow :: proc(p: ^Parser, allowed: scanner.TokenKind, loc := #caller_location) -> bool {
+	if peek(p) == allowed {
+		next(p)
+		return true
+	}
+
+	return false
 }
 
 add_node :: proc(p: ^Parser, node: Node) -> NodeIndex {
@@ -326,7 +371,7 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 
 		return add_node(p, ArrayLit{token, values[:]})
 	// prefix unary expressions
-	case .Minus, .Not, .Ampersand:
+	case .Minus, .Not, .Ampersand, .Tilde:
 		token := p.cursor
 		next(p)
 		expr := parse_expr(p, prefix_prec(atom))
@@ -343,7 +388,7 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 
 prefix_prec :: proc(op: scanner.TokenKind) -> int {
 	#partial switch op {
-	case .Minus, .Not:
+	case .Minus, .Not, .Tilde:
 		return 6
 	case:
 		return 0
@@ -399,6 +444,7 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	     .Mul,
 	     .Div,
 	     .Mod,
+         .Power,
 	     .Equal,
 	     .NotEqual,
 	     .Less,
@@ -408,7 +454,6 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	     .Or,
 	     .And,
 	     .Pipe,
-	     .Tilde,
 	     .Hat,
 	     .Ampersand,
 	     .LShift,
@@ -420,8 +465,10 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	     .MulEqual,
 	     .DivEqual,
 	     .ModEqual,
+         .PowerEqual,
 	     .AmpersandEqual,
 	     .PipeEqual,
+         .HatEqual,
 	     .TildeEqual,
 	     .LShiftEqual,
 	     .RShiftEqual:
@@ -623,14 +670,34 @@ parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	return add_node(p, ProcDecl{token, body, params[:]})
 }
 
+parse_member_decl :: proc(p: ^Parser) -> NodeIndex {
+	token := p.cursor
+	expect(p, .Identifier)
+
+	#partial switch peek(p) {
+	case .Var:
+		next(p)
+		expr := parse_expr(p)
+		return add_node(p, ParamDecl{token, expr})
+	case .Colon:
+		next(p)
+		parse_type(p)
+		expr := INVALID_NODE
+		if allow(p, .Assign) {
+			expr = parse_expr(p)
+		}
+		return add_node(p, MemberDecl{token, expr})
+	case:
+		panic(fmt.tprintf("invalid param decl: %v\n", peek(p)))
+	}
+}
+
 parse_struct_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	expect(p, .LBrace)
 
 	members := make([dynamic]NodeIndex, 0, 1)
 	for peek(p) != .RBrace {
-		// note: consider making a dedicated function
-		// for parsing struct members
-		append(&members, parse_param_decl(p))
+		append(&members, parse_member_decl(p))
 		if peek(p) == .Comma {
 			next(p)
 		} else {
@@ -740,45 +807,6 @@ parse_decl_or_stmt :: proc(p: ^Parser) -> NodeIndex {
 	}
 }
 
-skip_comments :: proc(p: ^Parser) {
-	for peek(p) == .LineComment || peek(p) == .BlockComment {
-		next(p)
-	}
-}
-
-consume_comments :: proc(p: ^Parser) {
-	if p.mode == .ParseComments {
-		panic("todo: parse comments")
-	} else {
-		skip_comments(p)
-	}
-}
-
-peek :: proc(p: ^Parser) -> scanner.TokenKind {
-	return p.tokens[p.cursor].kind
-}
-
-peek_next :: proc(p: ^Parser) -> scanner.TokenKind {
-	return p.tokens[p.lookahead].kind
-}
-
-expect :: proc(p: ^Parser, expected: scanner.TokenKind, loc := #caller_location) {
-	if peek(p) != expected {
-		panic(fmt.tprintf("expected token %v, but got %v, at %v", expected, peek(p), loc))
-	}
-
-	next(p)
-}
-
-allow :: proc(p: ^Parser, allowed: scanner.TokenKind, loc := #caller_location) -> bool {
-	if peek(p) == allowed {
-		next(p)
-		return true
-	}
-
-	return false
-}
-
 token_to_string :: proc(p: ^Parser, token: scanner.TokenIndex) -> string {
 	token := p.tokens[token]
 	start := token.start
@@ -867,6 +895,10 @@ print_tree :: proc(p: ^Parser) {
 		case ParamDecl:
 			print_indent(indent)
 			fmt.println("ParamDecl:", token_to_string(p, v.token))
+			print_node(p, v.expr, indent + 2)
+		case MemberDecl:
+			print_indent(indent)
+			fmt.println("MemberDecl:", token_to_string(p, v.token))
 			print_node(p, v.expr, indent + 2)
 		case ProcDecl:
 			print_indent(indent)

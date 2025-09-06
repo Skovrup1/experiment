@@ -52,24 +52,27 @@ TokenKind :: enum u8 {
 	Mul, // *
 	Div, // /
 	Mod, // %
+    Power, // **
 	PlusEqual, // +=
 	MinusEqual, // -=
 	MulEqual, // *=
 	DivEqual, // /=
 	ModEqual, // %=
+    PowerEqual, // **=
 
 	// bitwise
+	Tilde, // ~
+	Ampersand, // &
+	Pipe, // |
+	Hat, // ^
+	TildeEqual, // ~=
 	AmpersandEqual, // &=
 	PipeEqual, // |=
-	TildeEqual, // ~=
+	HatEqual, // ^=
 	LShiftEqual, // <<=
 	RShiftEqual, // >>=
 	Hash, // #
 	Dollar, // $
-	Tilde, // ~
-	Ampersand, // & (Bitwise AND / Address-of)
-	Pipe, // | (Bitwise OR)
-	Hat, // ^ (Bitwise XOR)
 	LShift, // <<
 	RShift, // >>
 
@@ -268,7 +271,7 @@ next_token :: proc(t: ^Scanner) -> Token {
 		for peek(t) != '"' {
 			advance(t)
 		}
-        advance(t)
+		advance(t)
 		return make_token(t, .String)
 	case '!':
 		if peek(t) == '=' {
@@ -303,6 +306,14 @@ next_token :: proc(t: ^Scanner) -> Token {
 		if peek(t) == '=' {
 			advance(t)
 			return make_token(t, .MulEqual)
+		}
+		if peek(t) == '*' {
+			advance(t)
+			if peek(t) == '=' {
+				advance(t)
+				return make_token(t, .PowerEqual)
+			}
+			return make_token(t, .Power)
 		}
 		return make_token(t, .Mul)
 	case '+':
@@ -388,6 +399,10 @@ next_token :: proc(t: ^Scanner) -> Token {
 	case ']':
 		return make_token(t, .RBracket)
 	case '^':
+		if peek(t) == '=' {
+			advance(t)
+			return make_token(t, .HatEqual)
+		}
 		return make_token(t, .Hat)
 	case '{':
 		return make_token(t, .LBrace)
@@ -400,6 +415,10 @@ next_token :: proc(t: ^Scanner) -> Token {
 		}
 		return make_token(t, .Tilde)
 	case '|':
+		if peek(t) == '|' {
+			advance(t)
+			return make_token(t, .Or)
+		}
 		if peek(t) == '=' {
 			advance(t)
 			return make_token(t, .PipeEqual)
