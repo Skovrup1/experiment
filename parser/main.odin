@@ -158,7 +158,6 @@ Node :: union {
 	ContinueStmt,
 	CallExpr,
 	MemberExpr,
-	//RefExpr,
 	IndexExpr,
 	UnaryExpr,
 	BinaryExpr,

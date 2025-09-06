@@ -1,13 +1,11 @@
-module main {
-    main :: () -> I32 {
-        x := 10;
-        y := 5;
+main :: () -> I32 {
+    x := 10;
+    y := 5;
 
-        x &= y;
-        x |= y;
-        x <<= 1;
-        x >>= 1;
-        x ~= 2;
-        return x;
-    }
+    x &= y;
+    x |= y;
+    x <<= 1;
+    x >>= 1;
+    x ~= 2;
+    return x;
 }

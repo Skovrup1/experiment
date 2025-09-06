@@ -1,0 +1,16 @@
+// todo
+
+Data :: union {
+    float: F32,
+    int: I32,
+    bool: Bool,
+}
+
+main :: () -> .I32 {
+    a := Data{};
+    a.float = 1.0;
+    a.int = 1;
+    a.bool = true;
+
+    return a.int;
+}

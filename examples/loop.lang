@@ -1,16 +1,11 @@
-module test {
-
 main :: () -> I32 {
     // full loop
-    acc := 0;
     loop i := 0; i < 10; i += 1 {
-        acc += i;
     }
 
     // missing initializer
     i := 0;
     loop ; i < 10; i += 1 {
-        acc += 1;
     }
 
     // missing incrementer
@@ -18,23 +13,29 @@ main :: () -> I32 {
         j += 1;
     }
 
-    // missing initializer and incrementer (while loop)
+    // while loop
     k := 0;
     loop ; k < 10; {
         k += 1;
     }
 
-    // infinite loop
+    // while loop 2
+    /* todo
+    l := 0;
+    loop l < 10 {
+
+    }
+    */
+
+    // unbound loop
     loop ;; {
         break;
     }
 
-    // infinite loop 2
+    // unbound loop 2
     loop {
         break;
     }
 
-    return acc;
-}
-
+    return 0;
 }

@@ -1,5 +1,3 @@
-module test {
-
 Vec2 :: struct {
     x: I32,
     y: I32,
@@ -12,6 +10,4 @@ make_vec2 :: (x: I32, y: I32) -> Vec2 {
 main :: () -> I32 {
     a := Vec2{1, 2};
     return a.x;
-}
-
 }

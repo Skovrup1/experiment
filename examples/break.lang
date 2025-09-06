@@ -1,11 +1,7 @@
-module test {
-
 main :: () -> I32 {
     loop {
         break;
     }
 
     return 0;
-}
-
 }

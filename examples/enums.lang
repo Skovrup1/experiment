@@ -1,0 +1,13 @@
+// todo
+fruit :: enum {
+    Apple,
+    Pear,
+    Orange,
+}
+
+main :: () -> .I32 {
+    a := fruit.Apple;
+    b := fruit.Pear;
+
+    return a == b;
+}
