@@ -15,7 +15,7 @@ main :: () -> I32 {
 
     // while loop
     k := 0;
-    loop ; k < 10; {
+    loop ;k < 10; {
         k += 1;
     }
 

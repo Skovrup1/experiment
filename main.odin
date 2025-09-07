@@ -9,6 +9,9 @@ import "core:os"
 import "core:mem"
 import vmem "core:mem/virtual"
 
+// stages of compilation
+// scanner -> parser -> sema -> tac -> pal
+
 main :: proc() {
 	arena: vmem.Arena
 	arena_err := vmem.arena_init_growing(&arena, reserved = mem.Gigabyte)
@@ -17,7 +20,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/operators.lang")
+	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -47,5 +50,6 @@ main :: proc() {
 	fmt.println()
 
 	fmt.println("size_of(parser.Node) =", size_of(parser.Node))
+    fmt.println("size of AST in bytes =", size_of(parser.Node) * len(parse_tree))
 	fmt.println()
 }

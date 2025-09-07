@@ -2,6 +2,10 @@ a :: () -> I32 {
     return 0;
 }
 
-main :: () -> I32 {
+b :: () -> I32 {
     return a()();
+}
+
+main :: () -> I32 {
+    return a + b + c + d + e;
 }

@@ -29,6 +29,7 @@ TokenKind :: enum u8 {
 	LBrace, // {
 	RBrace, // }
 	Deref, // .*
+	Arrow, // ->
 
 	// assignment & comparison operators
 	Const, // ::
@@ -52,13 +53,13 @@ TokenKind :: enum u8 {
 	Mul, // *
 	Div, // /
 	Mod, // %
-    Power, // **
+	Power, // **
 	PlusEqual, // +=
 	MinusEqual, // -=
 	MulEqual, // *=
 	DivEqual, // /=
 	ModEqual, // %=
-    PowerEqual, // **=
+	PowerEqual, // **=
 
 	// bitwise
 	Tilde, // ~
@@ -267,6 +268,7 @@ next_token :: proc(t: ^Scanner) -> Token {
 
 	switch r {
 	case '"':
+		// note: right now it also keeps the '"' character, starting and ending the string literal
 		advance(t)
 		for peek(t) != '"' {
 			advance(t)
@@ -328,6 +330,10 @@ next_token :: proc(t: ^Scanner) -> Token {
 		if peek(t) == '=' {
 			advance(t)
 			return make_token(t, .MinusEqual)
+		}
+		if peek(t) == '>' {
+			advance(t)
+			return make_token(t, .Arrow)
 		}
 		return make_token(t, .Minus)
 	case '.':

@@ -1,0 +1,14 @@
+// generic procedure
+add :: (a: $T, b: $T) -> $T {
+    return a + b;
+}
+
+// generic structs
+Vec3 :: struct($T) {
+    x: $T,
+    y: $T,
+    z: $T,
+}
+
+Vec3f :: Vec3(F32);
+

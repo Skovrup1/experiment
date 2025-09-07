@@ -444,7 +444,7 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	     .Mul,
 	     .Div,
 	     .Mod,
-         .Power,
+	     .Power,
 	     .Equal,
 	     .NotEqual,
 	     .Less,
@@ -465,10 +465,10 @@ is_binary_op :: proc(op: scanner.TokenKind) -> bool {
 	     .MulEqual,
 	     .DivEqual,
 	     .ModEqual,
-         .PowerEqual,
+	     .PowerEqual,
 	     .AmpersandEqual,
 	     .PipeEqual,
-         .HatEqual,
+	     .HatEqual,
 	     .TildeEqual,
 	     .LShiftEqual,
 	     .RShiftEqual:
@@ -539,12 +539,13 @@ parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
 
 	for is_binary_op(peek(p)) && infix_prec(peek(p)) >= min_prec {
 		token := p.cursor
+		prec := infix_prec(peek(p))
 
 		next_min_prec: int
 		if is_right_associative(peek(p)) {
-			next_min_prec = min_prec
+			next_min_prec = prec
 		} else {
-			next_min_prec = min_prec + 1
+			next_min_prec = prec + 1
 		}
 
 		next(p)
@@ -661,8 +662,7 @@ parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	}
 	next(p)
 
-	expect(p, .Minus)
-	expect(p, .Greater)
+	expect(p, .Arrow)
 	parse_type(p)
 
 	body := parse_decl_or_stmt(p)
@@ -841,7 +841,7 @@ print_tree :: proc(p: ^Parser) {
 	print_node :: proc(p: ^Parser, index: NodeIndex, indent := 0) {
 		print_indent :: proc(indent: int) {
 			for _ in 0 ..< indent {
-				fmt.print("  ")
+				fmt.print(" ")
 			}
 		}
 
@@ -849,13 +849,15 @@ print_tree :: proc(p: ^Parser) {
 			return
 		}
 
+		indent_increment := 2
+
 		node := p.nodes[index]
 		switch v in node {
 		case Module:
 			print_indent(indent)
 			fmt.println("Module")
 			for node in v.nodes {
-				print_node(p, node, indent + 2)
+				print_node(p, node, indent + indent_increment)
 			}
 		case IdentLit:
 			print_indent(indent)
@@ -874,110 +876,104 @@ print_tree :: proc(p: ^Parser) {
 			fmt.println("BoolLit:", token_to_bool(p, v.token))
 		case StructLit:
 			print_indent(indent)
-			fmt.println("StructLit")
+			fmt.println("StructLit:")
 			for value in v.values {
-				print_node(p, value, indent + 2)
+				print_node(p, value, indent + indent_increment)
 			}
 		case ArrayLit:
 			print_indent(indent)
-			fmt.println("ArrayLit")
+			fmt.println("ArrayLit:")
 			for value in v.values {
-				print_node(p, value, indent + 2)
+				print_node(p, value, indent + indent_increment)
 			}
 		case VarDecl:
 			print_indent(indent)
 			fmt.println("VarDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		case ConstDecl:
 			print_indent(indent)
 			fmt.println("ConstDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		case ParamDecl:
 			print_indent(indent)
 			fmt.println("ParamDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		case MemberDecl:
 			print_indent(indent)
 			fmt.println("MemberDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		case ProcDecl:
 			print_indent(indent)
 			fmt.println("ProcDecl:", token_to_string(p, v.token))
 			for param in v.params {
-				print_node(p, param, indent + 2)
+				print_node(p, param, indent + indent_increment)
 			}
-			print_node(p, v.body, indent + 2)
+			print_node(p, v.body, indent + indent_increment)
 		case StructDecl:
 			print_indent(indent)
 			fmt.println("StructDecl:", token_to_string(p, v.token))
 			for member in v.members {
-				print_node(p, member, indent + 2)
+				print_node(p, member, indent + indent_increment)
 			}
 		case ExprStmt:
 			print_indent(indent)
 			fmt.println("ExprStmt")
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		case BlockStmt:
 			print_indent(indent)
-			fmt.println("BlockStmt")
+			fmt.println("BlockStmt:")
 			for stmt in v.stmts {
-				print_node(p, stmt, indent + 2)
+				print_node(p, stmt, indent + indent_increment)
 			}
 		case ReturnStmt:
 			print_indent(indent)
-			fmt.println("ReturnStmt")
-			print_node(p, v.expr, indent + 2)
+			fmt.println("ReturnStmt:")
+			print_node(p, v.expr, indent + indent_increment)
 		case IfStmt:
 			print_indent(indent)
-			fmt.println("IfStmt")
-			print_node(p, v.cond, indent + 2)
-			print_node(p, v.then, indent + 2)
-			print_node(p, v.else_, indent + 2)
+			fmt.println("IfStmt:")
+			print_node(p, v.cond, indent + indent_increment)
+			print_node(p, v.then, indent + indent_increment)
+			print_node(p, v.else_, indent + indent_increment)
 		case LoopStmt:
 			print_indent(indent)
-			fmt.println("LoopStmt")
-			print_node(p, v.init, indent + 2)
-			print_node(p, v.cond, indent + 2)
-			print_node(p, v.incr, indent + 2)
-			print_node(p, v.body, indent + 2)
+			fmt.println("LoopStmt:")
+			print_node(p, v.init, indent + indent_increment)
+			print_node(p, v.cond, indent + indent_increment)
+			print_node(p, v.incr, indent + indent_increment)
+			print_node(p, v.body, indent + indent_increment)
 		case BreakStmt:
 			print_indent(indent)
-			fmt.println("BreakStmt")
+			fmt.println("BreakStmt:")
 		case ContinueStmt:
 			print_indent(indent)
-			fmt.println("ContinueStmt")
+			fmt.println("ContinueStmt:")
 		case CallExpr:
 			print_indent(indent)
-			fmt.println("CallExpr:", token_to_string(p, v.token))
-			print_indent(indent)
-			fmt.println("  Callee:")
-			print_node(p, v.callee, indent + 4)
-			if len(v.args) > 0 {
-				print_indent(indent)
-				fmt.println("  Args:")
-				for arg in v.args {
-					print_node(p, arg, indent + 4)
-				}
+			fmt.println("CallExpr:")
+			print_node(p, v.callee, indent + indent_increment)
+			for arg in v.args {
+				print_node(p, arg, indent + indent_increment)
 			}
 		case MemberExpr:
 			print_indent(indent)
 			fmt.println("MemberExpr:")
-			print_node(p, v.ident, indent + 2)
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.ident, indent + indent_increment)
+			print_node(p, v.expr, indent + indent_increment)
 		case IndexExpr:
 			print_indent(indent)
 			fmt.println("IndexExpr:")
-			print_node(p, v.base, indent + 2)
-			print_node(p, v.offset, indent + 2)
+			print_node(p, v.base, indent + indent_increment)
+			print_node(p, v.offset, indent + indent_increment)
 		case BinaryExpr:
 			print_indent(indent)
 			fmt.println("BinaryExpr:", token_to_string(p, v.token))
-			print_node(p, v.left, indent + 2)
-			print_node(p, v.right, indent + 2)
+			print_node(p, v.left, indent + indent_increment)
+			print_node(p, v.right, indent + indent_increment)
 		case UnaryExpr:
 			print_indent(indent)
 			fmt.println("UnaryExpr:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + 2)
+			print_node(p, v.expr, indent + indent_increment)
 		}
 	}
 

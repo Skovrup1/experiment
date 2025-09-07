@@ -46,5 +46,9 @@ main :: () -> I32 {
     x.x;
     x[0];
 
+    // todo
+    // cast to F32
+    // z := F32(x)
+
     return x;
 }

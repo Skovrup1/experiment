@@ -6,11 +6,6 @@ import "core:fmt"
 
 // tac
 
-// plan
-// - typeless conversion to three adress code
-// - scope analysis
-// - type analysis
-
 Scope :: map[string]InstIndex
 
 enter_scope :: proc(a: ^Analyzer) {
