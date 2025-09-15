@@ -1,11 +1,9 @@
-a :: () -> I32 {
-    return 0;
+foo :: () -> Bool {
+    return 1 == 2;
 }
 
-b :: () -> I32 {
-    return a()();
-}
+main :: () -> Bool {
+    a := true;
 
-main :: () -> I32 {
-    return a + b + c + d + e;
+    return a == foo();
 }

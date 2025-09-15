@@ -19,3 +19,10 @@ c :: () -> I32 {
     return if 1 == 2 do 3 else 4;
 }
 */
+
+d :: () -> I32 {
+    x := true;
+    y := true;
+    if x && y {}
+    !x;
+}

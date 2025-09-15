@@ -11,16 +11,3 @@ main :: () -> I32 {
 
     return a;
 }
-
-// note: should tuples be more like anonymous structs and therefore use a more struct-like syntax?
-make_pair_alt :: (a: I32, b: i32) -> {I32, I32} {
-    return {a, b};
-}
-
-main_alt :: () -> I32 {
-    {a, b} := make_pair(1, 2);
-    ab := make_pair(1, 2);
-    a = ab.0;
-
-    return a;
-}

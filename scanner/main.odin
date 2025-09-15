@@ -16,6 +16,7 @@ TokenKind :: enum u8 {
 	String,
 	Real,
 	Integer,
+	StructLit,
 
 	// delimiters & punctuation
 	Comma, // ,
@@ -88,12 +89,6 @@ TokenKind :: enum u8 {
 	Struct,
 	True,
 	False,
-
-	// type keywords
-	Void,
-	F32,
-	I32,
-	Bool,
 }
 
 TokenIndex :: distinct u32
@@ -125,10 +120,6 @@ make_keywords :: proc() -> map[string]TokenKind {
 	keywords["struct"] = .Struct
 	keywords["true"] = .True
 	keywords["false"] = .False
-	keywords["Void"] = .Void // maybe change to ()
-	keywords["F32"] = .F32
-	keywords["I32"] = .I32
-	keywords["Bool"] = .Bool
 
 	return keywords
 }
@@ -212,6 +203,11 @@ identifier_type :: proc(t: ^Scanner) -> TokenKind {
 	keyword, is_keyword := t.keywords[ident]
 	if is_keyword {
 		return keyword
+	}
+
+    // note: clean up
+	if peek(t) == '{' {
+		return .StructLit
 	}
 
 	return .Identifier

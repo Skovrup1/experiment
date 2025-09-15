@@ -12,6 +12,11 @@ Module :: struct {
 	nodes: []NodeIndex,
 }
 
+TypeSpec :: struct {
+	token:  scanner.TokenIndex,
+	is_ptr: bool,
+}
+
 IdentLit :: struct {
 	token: scanner.TokenIndex,
 }
@@ -44,28 +49,33 @@ ArrayLit :: struct {
 
 VarDecl :: struct {
 	token: scanner.TokenIndex,
+	type:  NodeIndex,
 	expr:  NodeIndex,
 }
 
 ConstDecl :: struct {
 	token: scanner.TokenIndex,
+	type:  NodeIndex,
 	expr:  NodeIndex,
 }
 
 ParamDecl :: struct {
 	token: scanner.TokenIndex,
+	type:  NodeIndex,
 	expr:  NodeIndex,
 }
 
 MemberDecl :: struct {
 	token: scanner.TokenIndex,
+	type:  NodeIndex,
 	expr:  NodeIndex,
 }
 
 ProcDecl :: struct {
-	token:  scanner.TokenIndex,
-	body:   NodeIndex,
-	params: []NodeIndex,
+	token:       scanner.TokenIndex,
+	return_type: NodeIndex,
+	body:        NodeIndex,
+	params:      []NodeIndex,
 }
 
 StructDecl :: struct {
@@ -142,6 +152,7 @@ BinaryExpr :: struct {
 
 Node :: union {
 	Module,
+	TypeSpec,
 	IdentLit,
 	StringLit,
 	RealLit,
@@ -266,6 +277,8 @@ add_node :: proc(p: ^Parser, node: Node) -> NodeIndex {
 	return NodeIndex(len(p.nodes) - 1)
 }
 
+//parse_file_level :: proc() {
+//}
 parse :: proc(p: ^Parser) -> []Node {
 	#partial switch peek(p) {
 	case .Module:
@@ -294,13 +307,14 @@ parse :: proc(p: ^Parser) -> []Node {
 }
 
 parse_type :: proc(p: ^Parser) -> NodeIndex {
-	allow(p, .Mul) // ptr
+	is_ptr := allow(p, .Mul)
+	//is_array
 
 	#partial switch peek(p) {
-	case .Identifier, .Void, .F32, .I32, .Bool:
+	case .Identifier:
 		token := p.cursor
 		next(p)
-		return add_node(p, IdentLit{token})
+		return add_node(p, TypeSpec{token, is_ptr})
 	case:
 		panic(fmt.tprintf("invalid type identifier: %v", peek(p)))
 	}
@@ -327,13 +341,11 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 	case .Identifier:
 		token := p.cursor
 		next(p)
-
-		if peek(p) == .LBrace {
-			next(p)
-			return parse_struct_lit(p, token)
-		}
-
 		return add_node(p, IdentLit{token})
+	case .StructLit:
+		token := p.cursor
+		next(p)
+		return parse_struct_lit(p, token)
 	case .String:
 		token := p.cursor
 		next(p)
@@ -571,8 +583,12 @@ parse_block_stmt :: proc(p: ^Parser) -> NodeIndex {
 parse_return_stmt :: proc(p: ^Parser) -> NodeIndex {
 	token := p.cursor
 	next(p)
-	expr := parse_expr(p)
-	expect(p, .Semicolon)
+	no_expr := allow(p, .Semicolon)
+	expr := INVALID_NODE
+	if !no_expr {
+		expr = parse_expr(p)
+		expect(p, .Semicolon)
+	}
 	return add_node(p, ReturnStmt{token, expr})
 }
 
@@ -604,7 +620,8 @@ parse_for_stmt :: proc(p: ^Parser) -> NodeIndex {
 				next(p)
 				next(p)
 				expr := parse_expr(p)
-				init = add_node(p, VarDecl{token, expr})
+				// panic("handle types")
+				init = add_node(p, VarDecl{token, INVALID_NODE, expr})
 			} else {
 				init = parse_expr(p)
 			}
@@ -634,15 +651,15 @@ parse_param_decl :: proc(p: ^Parser) -> NodeIndex {
 	case .Var:
 		next(p)
 		expr := parse_expr(p)
-		return add_node(p, ParamDecl{token, expr})
+		return add_node(p, ParamDecl{token, INVALID_NODE, expr})
 	case .Colon:
 		next(p)
-		parse_type(p)
+		type := parse_type(p)
 		expr := INVALID_NODE
 		if allow(p, .Assign) {
 			expr = parse_expr(p)
 		}
-		return add_node(p, ParamDecl{token, expr})
+		return add_node(p, ParamDecl{token, type, expr})
 	case:
 		panic(fmt.tprintf("invalid param decl: %v\n", peek(p)))
 	}
@@ -663,11 +680,11 @@ parse_proc_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	next(p)
 
 	expect(p, .Arrow)
-	parse_type(p)
+	return_type := parse_type(p)
 
 	body := parse_decl_or_stmt(p)
 
-	return add_node(p, ProcDecl{token, body, params[:]})
+	return add_node(p, ProcDecl{token, return_type, body, params[:]})
 }
 
 parse_member_decl :: proc(p: ^Parser) -> NodeIndex {
@@ -678,15 +695,15 @@ parse_member_decl :: proc(p: ^Parser) -> NodeIndex {
 	case .Var:
 		next(p)
 		expr := parse_expr(p)
-		return add_node(p, ParamDecl{token, expr})
+		return add_node(p, ParamDecl{token, INVALID_NODE, expr})
 	case .Colon:
 		next(p)
-		parse_type(p)
+		type := parse_type(p)
 		expr := INVALID_NODE
 		if allow(p, .Assign) {
 			expr = parse_expr(p)
 		}
-		return add_node(p, MemberDecl{token, expr})
+		return add_node(p, MemberDecl{token, type, expr})
 	case:
 		panic(fmt.tprintf("invalid param decl: %v\n", peek(p)))
 	}
@@ -713,33 +730,33 @@ parse_const_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	expr := parse_expr(p)
 	expect(p, .Semicolon)
 
-	return add_node(p, ConstDecl{token, expr})
+	return add_node(p, ConstDecl{token, INVALID_NODE, expr})
 }
 
 parse_var_decl :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
 	expr := parse_expr(p)
 	expect(p, .Semicolon)
 
-	return add_node(p, VarDecl{token, expr})
+	return add_node(p, VarDecl{token, INVALID_NODE, expr})
 }
 
 parse_type_annotation :: proc(p: ^Parser, token: scanner.TokenIndex) -> NodeIndex {
-	parse_type(p)
+	type := parse_type(p)
 
 	#partial switch peek(p) {
 	case .Assign:
 		next(p)
 		expr := parse_expr(p)
 		expect(p, .Semicolon)
-		return add_node(p, VarDecl{token, expr})
+		return add_node(p, VarDecl{token, type, expr})
 	case .Colon:
 		next(p)
 		expr := parse_expr(p)
 		expect(p, .Semicolon)
-		return add_node(p, ConstDecl{token, expr})
+		return add_node(p, ConstDecl{token, type, expr})
 	case .Semicolon:
 		next(p)
-		return add_node(p, VarDecl{token, INVALID_NODE})
+		return add_node(p, VarDecl{token, type, INVALID_NODE})
 	case:
 		panic(fmt.tprintf("invalid type annotation: %v", peek(p)))
 	}
@@ -850,15 +867,23 @@ print_tree :: proc(p: ^Parser) {
 		}
 
 		indent_increment := 2
+		next_indent := indent + indent_increment
 
 		node := p.nodes[index]
-		switch v in node {
+		#partial switch v in node {
 		case Module:
 			print_indent(indent)
 			fmt.println("Module")
 			for node in v.nodes {
-				print_node(p, node, indent + indent_increment)
+				print_node(p, node, next_indent)
 			}
+		case TypeSpec:
+			print_indent(indent)
+			fmt.print("TypeSpec: ")
+			if v.is_ptr {
+				fmt.print("*")
+			}
+			fmt.println(token_to_string(p, v.token))
 		case IdentLit:
 			print_indent(indent)
 			fmt.println("IdentLit:", token_to_string(p, v.token))
@@ -878,70 +903,83 @@ print_tree :: proc(p: ^Parser) {
 			print_indent(indent)
 			fmt.println("StructLit:")
 			for value in v.values {
-				print_node(p, value, indent + indent_increment)
+				print_node(p, value, next_indent)
 			}
 		case ArrayLit:
 			print_indent(indent)
 			fmt.println("ArrayLit:")
 			for value in v.values {
-				print_node(p, value, indent + indent_increment)
+				print_node(p, value, next_indent)
 			}
 		case VarDecl:
 			print_indent(indent)
 			fmt.println("VarDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + indent_increment)
+			if v.type != INVALID_NODE {
+				print_node(p, v.type, next_indent)
+			}
+			print_node(p, v.expr, next_indent)
 		case ConstDecl:
 			print_indent(indent)
+			if v.type != INVALID_NODE {
+				print_node(p, v.type, next_indent)
+			}
 			fmt.println("ConstDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		case ParamDecl:
 			print_indent(indent)
+			if v.type != INVALID_NODE {
+				print_node(p, v.type, next_indent)
+			}
 			fmt.println("ParamDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		case MemberDecl:
 			print_indent(indent)
+			if v.type != INVALID_NODE {
+				print_node(p, v.type, next_indent)
+			}
 			fmt.println("MemberDecl:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		case ProcDecl:
 			print_indent(indent)
 			fmt.println("ProcDecl:", token_to_string(p, v.token))
+			print_node(p, v.return_type, next_indent)
 			for param in v.params {
-				print_node(p, param, indent + indent_increment)
+				print_node(p, param, next_indent)
 			}
-			print_node(p, v.body, indent + indent_increment)
+			print_node(p, v.body, next_indent)
 		case StructDecl:
 			print_indent(indent)
 			fmt.println("StructDecl:", token_to_string(p, v.token))
 			for member in v.members {
-				print_node(p, member, indent + indent_increment)
+				print_node(p, member, next_indent)
 			}
 		case ExprStmt:
 			print_indent(indent)
 			fmt.println("ExprStmt")
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		case BlockStmt:
 			print_indent(indent)
 			fmt.println("BlockStmt:")
 			for stmt in v.stmts {
-				print_node(p, stmt, indent + indent_increment)
+				print_node(p, stmt, next_indent)
 			}
 		case ReturnStmt:
 			print_indent(indent)
 			fmt.println("ReturnStmt:")
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		case IfStmt:
 			print_indent(indent)
 			fmt.println("IfStmt:")
-			print_node(p, v.cond, indent + indent_increment)
-			print_node(p, v.then, indent + indent_increment)
-			print_node(p, v.else_, indent + indent_increment)
+			print_node(p, v.cond, next_indent)
+			print_node(p, v.then, next_indent)
+			print_node(p, v.else_, next_indent)
 		case LoopStmt:
 			print_indent(indent)
 			fmt.println("LoopStmt:")
-			print_node(p, v.init, indent + indent_increment)
-			print_node(p, v.cond, indent + indent_increment)
-			print_node(p, v.incr, indent + indent_increment)
-			print_node(p, v.body, indent + indent_increment)
+			print_node(p, v.init, next_indent)
+			print_node(p, v.cond, next_indent)
+			print_node(p, v.incr, next_indent)
+			print_node(p, v.body, next_indent)
 		case BreakStmt:
 			print_indent(indent)
 			fmt.println("BreakStmt:")
@@ -951,29 +989,29 @@ print_tree :: proc(p: ^Parser) {
 		case CallExpr:
 			print_indent(indent)
 			fmt.println("CallExpr:")
-			print_node(p, v.callee, indent + indent_increment)
+			print_node(p, v.callee, next_indent)
 			for arg in v.args {
-				print_node(p, arg, indent + indent_increment)
+				print_node(p, arg, next_indent)
 			}
 		case MemberExpr:
 			print_indent(indent)
 			fmt.println("MemberExpr:")
-			print_node(p, v.ident, indent + indent_increment)
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.ident, next_indent)
+			print_node(p, v.expr, next_indent)
 		case IndexExpr:
 			print_indent(indent)
 			fmt.println("IndexExpr:")
-			print_node(p, v.base, indent + indent_increment)
-			print_node(p, v.offset, indent + indent_increment)
+			print_node(p, v.base, next_indent)
+			print_node(p, v.offset, next_indent)
 		case BinaryExpr:
 			print_indent(indent)
 			fmt.println("BinaryExpr:", token_to_string(p, v.token))
-			print_node(p, v.left, indent + indent_increment)
-			print_node(p, v.right, indent + indent_increment)
+			print_node(p, v.left, next_indent)
+			print_node(p, v.right, next_indent)
 		case UnaryExpr:
 			print_indent(indent)
 			fmt.println("UnaryExpr:", token_to_string(p, v.token))
-			print_node(p, v.expr, indent + indent_increment)
+			print_node(p, v.expr, next_indent)
 		}
 	}
 

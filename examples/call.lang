@@ -2,22 +2,22 @@ a :: () -> I32 {
     return 0;
 }
 
-b :: (a: I32, b: I32) -> I32 {
-    return a + b;
+b :: (x: I32, y: I32) -> I32 {
+    return x + y;
 }
 
-c :: (a := 0, b := 2) -> I32 {
-    return a + b;
+c :: (x := 0, y := 2) -> I32 {
+    return x + y;
 }
 
-d :: (a: I32 = 0, b: I32 = 2) -> I32 {
-    return a + b;
+d :: (x: I32 = 0, y: I32 = 2) -> I32 {
+    return x + y;
 }
 
 main :: () -> I32 {
     a();
 
-    b(1, 2);
+    b(1, true);
 
     c();
 

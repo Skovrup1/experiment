@@ -2,6 +2,7 @@ package main
 
 import "parser"
 import "scanner"
+import "sema"
 
 import "core:fmt"
 import "core:os"
@@ -20,7 +21,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/test.lang")
+	handle, open_err := os.open("examples/call.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -39,9 +40,9 @@ main :: proc() {
 	fmt.println(string(source))
 
 	p := parser.make_parser(source)
-	parse_tree := parser.parse(&p)
+	ast := parser.parse(&p)
 
-	for node, i in parse_tree {
+	for node, i in ast {
 		fmt.println(i, node)
 	}
 	fmt.println()
@@ -50,6 +51,19 @@ main :: proc() {
 	fmt.println()
 
 	fmt.println("size_of(parser.Node) =", size_of(parser.Node))
-    fmt.println("size of AST in bytes =", size_of(parser.Node) * len(parse_tree))
+	fmt.println("size of AST in bytes =", size_of(parser.Node) * len(ast))
+	fmt.println()
+
+	a := sema.make_analyzer(&p)
+	sema.analyze(&a)
+
+	for type in a.types {
+		fmt.println(type)
+	}
+	fmt.println()
+
+	for symbol in a.symbols {
+		fmt.println(symbol)
+	}
 	fmt.println()
 }

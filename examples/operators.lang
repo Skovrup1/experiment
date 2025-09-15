@@ -9,22 +9,26 @@ main :: () -> I32 {
     x <= y;
     x > y;
     x >= y;
-    x || y;
-    x && y;
-    !x;
+    if true || false {}
+    if true && false {}
+    !true;
 
     x + y;
-    x - y;
-    x * y;
-    x / y;
-    x % y;
-    x ** y;
-
     x += y;
+
+    x - y;
     x -= y;
+
+    x * y;
     x *= y;
+
+    x / y;
     x /= y;
+
+    x % y;
     x %= y;
+
+    x ** y;
     x **= y;
 
     ~x;
@@ -46,9 +50,7 @@ main :: () -> I32 {
     x.x;
     x[0];
 
-    // todo
-    // cast to F32
-    // z := F32(x)
+    //z := F32(x);
 
-    return x;
+    return 0;
 }

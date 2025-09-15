@@ -1,15 +1,9 @@
 // todo
 
-// implicit
 add :: (a: I32, b: I32) -> I32 {
 
 }
 
 add :: (a: Vec2, b: Vec2) -> Vec2 {
-
-}
-
-// operator overloading
-operator+ :: (a: Vec2, b: Vec2) -> Vec2 {
 
 }
