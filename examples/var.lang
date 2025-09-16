@@ -4,11 +4,11 @@ main :: () -> I32 {
     b :: 2; // constant initalization
 
     c: I32; // type annotation
-    c = 0; // assignment
+    c = a; // assignment
 
-    d: I32 = 1; // variable with type annotation
+    d: I32 = 3; // variable with type annotation
 
-    e: I32 : 2; // constant with type annotation
+    e: I32 : 4; // constant with type annotation
 
     return 0;
 }

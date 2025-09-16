@@ -265,7 +265,6 @@ next_token :: proc(t: ^Scanner) -> Token {
 	switch r {
 	case '"':
 		// note: right now it also keeps the '"' character, starting and ending the string literal
-		advance(t)
 		for peek(t) != '"' {
 			advance(t)
 		}

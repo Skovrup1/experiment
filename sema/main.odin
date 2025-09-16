@@ -8,13 +8,29 @@ import "core:fmt"
 BaseType :: enum {
 	Void,
 	String,
+	//F64,
 	F32,
-	I32,
+	//F16,
+	// S128,
+	// S64,
+	I32, // S32
+	// S16,
+	// S8,
+	// U128,
+	// U64,
+	// U32,
+	// U16,
+	// U8,
 	Bool,
 }
 
+
 Primitive :: struct {
 	inner: BaseType,
+}
+
+Structure :: struct {
+	members: []TypeIndex,
 }
 
 Procedure :: struct {
@@ -24,6 +40,7 @@ Procedure :: struct {
 
 Type :: union {
 	Primitive,
+	//Structure
 	Procedure,
 }
 
@@ -130,6 +147,30 @@ lookup_type :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (TypeIndex, b
 	panic("failed to lookup type")
 }
 
+is_type_name :: proc(name: string) -> bool {
+	return name == "Bool" || name == "I32" || name == "F32" || name == "String"
+}
+
+get_type_from_name :: proc(name: string) -> TypeIndex {
+	switch name {
+	case "Void":
+		return TypeIndex(BaseType.Void)
+	case "String":
+		return TypeIndex(BaseType.String)
+	case "F32":
+		return TypeIndex(BaseType.F32)
+	case "I32":
+		return TypeIndex(BaseType.I32)
+	case "Bool":
+		return TypeIndex(BaseType.Bool)
+	}
+	panic(fmt.tprintf("unknown type name: %v", name))
+}
+
+is_numeric_type :: proc(type_index: TypeIndex) -> bool {
+	return type_index == TypeIndex(BaseType.F32) || type_index == TypeIndex(BaseType.I32)
+}
+
 hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 	node := a.p.nodes[node_index]
 	#partial switch v in node {
@@ -199,7 +240,7 @@ hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
 
-        // note: recheck
+		// note: recheck
 		append(&a.return_type_stack, return_type)
 	case parser.StructDecl:
 	}
@@ -223,6 +264,40 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> TypeIndex {
 		}
 		panic(fmt.tprintf("undeclared identifier: %v\n", ident))
 	case parser.CallExpr:
+		callee_node := a.p.nodes[v.callee]
+
+		// if ident is a type name, its a type cast
+		if ident_lit, ok := callee_node.(parser.IdentLit); ok {
+			type_name := parser.token_to_string(a.p, ident_lit.token)
+
+			if is_type_name(type_name) {
+				if len(v.args) != 1 {
+					panic("casts must have only one argument\n")
+				}
+
+				source_type := infer(a, v.args[0])
+				target_type := get_type_from_name(type_name)
+
+				if is_numeric_type(source_type) && is_numeric_type(target_type) {
+					return target_type
+				}
+
+				if is_numeric_type(source_type) && target_type == TypeIndex(BaseType.Bool) ||
+				   is_numeric_type(target_type) && source_type == TypeIndex(BaseType.Bool) {
+					return target_type
+				}
+
+				panic(
+					fmt.tprintf(
+						"error: cannot cast from %v to %v",
+						a.types[source_type],
+						a.types[target_type],
+					),
+				)
+			}
+		}
+
+		// otherwise its a procedure call
 		callee_index := infer(a, v.callee)
 		callee_type := a.types[callee_index]
 		proc_type, is_proc := callee_type.(Procedure)
@@ -243,7 +318,9 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> TypeIndex {
 		right := infer(a, v.right)
 		op := a.p.tokens[v.token].kind
 		if left != right {
-			panic(fmt.tprintf("error: %v, type mismatch with %v, %v", op, left, right))
+			left_type := a.types[left]
+			right_type := a.types[right]
+			panic(fmt.tprintf("error: %v, type mismatch with %v, %v", op, left_type, right_type))
 		}
 		#partial switch op {
 		case .Assign,
@@ -372,7 +449,6 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			type  = declared_type,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
-
 	case parser.ConstDecl:
 		ident := parser.token_to_string(a.p, v.token)
 
@@ -397,7 +473,6 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			is_const = true,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
-
 	case parser.ParamDecl:
 		ident := parser.token_to_string(a.p, v.token)
 
@@ -421,7 +496,6 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			type  = declared_type,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
-
 	case parser.ProcDecl:
 		proc_symbol, _ := lookup_symbol(a, parser.token_to_string(a.p, v.token))
 		symbol_type_index := a.symbols[proc_symbol].type
@@ -440,17 +514,14 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		type_check(a, v.body)
 		exit_scope(a)
 		pop(&a.return_type_stack)
-
 	case parser.ExprStmt:
 		infer(a, v.expr)
-
 	case parser.BlockStmt:
 		enter_scope(a)
 		for stmt in v.stmts {
 			type_check(a, stmt)
 		}
 		exit_scope(a)
-
 	case parser.ReturnStmt:
 		expected_type := pop(&a.return_type_stack)
 
@@ -462,7 +533,6 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 
 			check(a, v.expr, expected_type)
 		}
-
 	case:
 	}
 }

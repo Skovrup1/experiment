@@ -21,7 +21,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/call.lang")
+	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {

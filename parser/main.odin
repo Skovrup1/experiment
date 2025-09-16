@@ -612,7 +612,7 @@ parse_for_stmt :: proc(p: ^Parser) -> NodeIndex {
 	cond := INVALID_NODE
 	incr := INVALID_NODE
 
-	skip_all := allow(p, .LBrace)
+	skip_all := peek(p) == .LBrace
 	if !skip_all {
 		if peek(p) != .Semicolon {
 			if peek(p) == .Identifier && peek_next(p) == .Var {
@@ -866,8 +866,7 @@ print_tree :: proc(p: ^Parser) {
 			return
 		}
 
-		indent_increment := 2
-		next_indent := indent + indent_increment
+		next_indent := indent + 2
 
 		node := p.nodes[index]
 		#partial switch v in node {
@@ -920,24 +919,24 @@ print_tree :: proc(p: ^Parser) {
 			print_node(p, v.expr, next_indent)
 		case ConstDecl:
 			print_indent(indent)
+			fmt.println("ConstDecl:", token_to_string(p, v.token))
 			if v.type != INVALID_NODE {
 				print_node(p, v.type, next_indent)
 			}
-			fmt.println("ConstDecl:", token_to_string(p, v.token))
 			print_node(p, v.expr, next_indent)
 		case ParamDecl:
 			print_indent(indent)
+			fmt.println("ParamDecl:", token_to_string(p, v.token))
 			if v.type != INVALID_NODE {
 				print_node(p, v.type, next_indent)
 			}
-			fmt.println("ParamDecl:", token_to_string(p, v.token))
 			print_node(p, v.expr, next_indent)
 		case MemberDecl:
 			print_indent(indent)
+			fmt.println("MemberDecl:", token_to_string(p, v.token))
 			if v.type != INVALID_NODE {
 				print_node(p, v.type, next_indent)
 			}
-			fmt.println("MemberDecl:", token_to_string(p, v.token))
 			print_node(p, v.expr, next_indent)
 		case ProcDecl:
 			print_indent(indent)
