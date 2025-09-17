@@ -1,6 +1,7 @@
-package scanner
+package lexer
 
 import "core:fmt"
+import "core:strconv"
 
 TokenKind :: enum u8 {
 	Null = 0,
@@ -205,7 +206,7 @@ identifier_type :: proc(t: ^Scanner) -> TokenKind {
 		return keyword
 	}
 
-    // note: clean up
+	// note: clean up
 	if peek(t) == '{' {
 		return .StructLit
 	}

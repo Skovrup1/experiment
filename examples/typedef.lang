@@ -1,5 +1,3 @@
-// todo
-
 NumberType :: I32;
 
 main :: () -> I32 {

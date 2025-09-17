@@ -120,7 +120,14 @@ lookup_symbol :: proc(a: ^Analyzer, ident: string) -> (SymbolIndex, bool) {
 	return INVALID_SYMBOL, false
 }
 
-lookup_type :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (TypeIndex, bool) {
+lookup_type :: proc(
+	a: ^Analyzer,
+	node_index: parser.NodeIndex,
+	loc := #caller_location,
+) -> (
+	TypeIndex,
+	bool,
+) {
 	if node_index == parser.INVALID_NODE {
 		return 0, false
 	}
@@ -142,15 +149,24 @@ lookup_type :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (TypeIndex, b
 		case "Bool":
 			return TypeIndex(BaseType.Bool), true
 		}
+
+		if symbol_index, found := lookup_symbol(a, name); found {
+			symbol := a.symbols[symbol_index]
+			if symbol.kind == .Type {
+				return symbol.type, true
+			}
+		}
 	}
 
-	panic("failed to lookup type")
+	panic(fmt.tprintf("failed to lookup type at %v\n", loc))
 }
 
 is_type_name :: proc(name: string) -> bool {
 	return name == "Bool" || name == "I32" || name == "F32" || name == "String"
 }
 
+// note: roll is_type_name and get_type_from_name into
+// single procedure which returns (TypeIndex, bool)
 get_type_from_name :: proc(name: string) -> TypeIndex {
 	switch name {
 	case "Void":
@@ -171,13 +187,13 @@ is_numeric_type :: proc(type_index: TypeIndex) -> bool {
 	return type_index == TypeIndex(BaseType.F32) || type_index == TypeIndex(BaseType.I32)
 }
 
-hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
+declare_top_level_symbols :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 	node := a.p.nodes[node_index]
 	#partial switch v in node {
 	case parser.Module:
 		enter_scope(a)
 		for decl in v.nodes {
-			hoisting(a, decl)
+			declare_top_level_symbols(a, decl)
 		}
 	case parser.VarDecl:
 		ident := parser.token_to_string(a.p, v.token)
@@ -196,6 +212,14 @@ hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		add_symbol_to_current_scope(a, ident, symbol)
 	case parser.ConstDecl:
 		ident := parser.token_to_string(a.p, v.token)
+
+		expr_node := a.p.nodes[v.expr]
+		if ident_lit, ok := expr_node.(parser.IdentLit); ok {
+			ident := parser.token_to_string(a.p, ident_lit.token)
+			if is_type_name(ident) {
+                panic("todo")
+            }
+		}
 
 		declared_type, has_type := lookup_type(a, v.type)
 
@@ -216,7 +240,7 @@ hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		declared_type, _ := lookup_type(a, v.type)
 
 		symbol := Symbol {
-			kind  = .Proc,
+			kind  = .Param,
 			ident = ident,
 			type  = declared_type,
 		}
@@ -240,9 +264,77 @@ hoisting :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
 
-		// note: recheck
 		append(&a.return_type_stack, return_type)
 	case parser.StructDecl:
+	}
+}
+
+declare_symbols :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
+	node := a.p.nodes[node_index]
+	#partial switch v in node {
+	case parser.Module:
+		for decl in v.nodes {
+			declare_symbols(a, decl)
+		}
+	case parser.VarDecl:
+		if len(a.scopes) > 1 {
+			ident := parser.token_to_string(a.p, v.token)
+
+			declared_type, has_type := lookup_type(a, v.type)
+			if !has_type {
+				declared_type = infer(a, v.expr)
+			}
+
+			symbol := Symbol {
+				kind  = .Var,
+				ident = ident,
+				type  = declared_type,
+			}
+			add_symbol_to_current_scope(a, ident, symbol)
+		}
+	case parser.ConstDecl:
+		if len(a.scopes) > 1 {
+			ident := parser.token_to_string(a.p, v.token)
+
+			declared_type, has_type := lookup_type(a, v.type)
+			if !has_type {
+				declared_type = infer(a, v.expr)
+			}
+
+			symbol := Symbol {
+				kind     = .Var,
+				ident    = ident,
+				type     = declared_type,
+				is_const = true,
+			}
+			add_symbol_to_current_scope(a, ident, symbol)
+		}
+	case parser.ParamDecl:
+		ident := parser.token_to_string(a.p, v.token)
+
+		declared_type, _ := lookup_type(a, v.type)
+
+		symbol := Symbol {
+			kind  = .Param,
+			ident = ident,
+			type  = declared_type,
+		}
+		add_symbol_to_current_scope(a, ident, symbol)
+	case parser.MemberDecl:
+	case parser.ProcDecl:
+		enter_scope(a)
+		for param in v.params {
+			declare_symbols(a, param)
+		}
+		enter_scope(a)
+		declare_symbols(a, v.body)
+	case parser.StructDecl:
+	case parser.BlockStmt:
+		enter_scope(a)
+		for stmt in v.stmts {
+			declare_symbols(a, stmt)
+		}
+		exit_scope(a)
 	}
 }
 
@@ -259,9 +351,15 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> TypeIndex {
 		return TypeIndex(BaseType.Bool)
 	case parser.IdentLit:
 		ident := parser.token_to_string(a.p, v.token)
+
+		if is_type_name(ident) {
+			return get_type_from_name(ident)
+		}
+
 		if symbol_idx, found := lookup_symbol(a, ident); found {
 			return a.symbols[symbol_idx].type
 		}
+
 		panic(fmt.tprintf("undeclared identifier: %v\n", ident))
 	case parser.CallExpr:
 		callee_node := a.p.nodes[v.callee]
@@ -439,6 +537,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			check(a, v.expr, declared_type)
 		}
 
+	/*
 		if _, found := lookup_symbol(a, ident); found {
 			panic(fmt.tprintf("'%v' already declared\n", ident))
 		}
@@ -449,6 +548,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			type  = declared_type,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
+        */
 	case parser.ConstDecl:
 		ident := parser.token_to_string(a.p, v.token)
 
@@ -462,6 +562,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			check(a, v.expr, declared_type)
 		}
 
+	/*
 		if _, found := lookup_symbol(a, ident); found {
 			panic(fmt.tprintf("'%v' already declared\n", ident))
 		}
@@ -473,6 +574,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			is_const = true,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
+        */
 	case parser.ParamDecl:
 		ident := parser.token_to_string(a.p, v.token)
 
@@ -486,6 +588,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			check(a, v.expr, declared_type)
 		}
 
+	/*
 		if _, found := lookup_symbol(a, ident); found {
 			panic(fmt.tprintf("'%v' already declared\n", ident))
 		}
@@ -496,6 +599,7 @@ type_check :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 			type  = declared_type,
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
+        */
 	case parser.ProcDecl:
 		proc_symbol, _ := lookup_symbol(a, parser.token_to_string(a.p, v.token))
 		symbol_type_index := a.symbols[proc_symbol].type
@@ -548,7 +652,8 @@ analyze :: proc(a: ^Analyzer) {
 	}
 	root_node := parser.NodeIndex(len(ast) - 1)
 
-	hoisting(a, root_node)
+	declare_top_level_symbols(a, root_node)
+	declare_symbols(a, root_node)
 	type_check(a, root_node)
 	flow_check(a, root_node)
 }
