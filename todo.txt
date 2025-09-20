@@ -1,0 +1,214 @@
+# Missing Features Plan for Language Compiler
+
+## SCANNER
+The scanner is mostly complete but needs a few additions:
+
+### Missing Keywords:
+- Union
+- Enum
+- True/False (exists but may need verification)
+- Type
+
+### Missing Token Types:
+- Bool literal tokens (currently handled as keywords)
+- Union keyword token
+
+---
+
+## PARSER
+
+### Critical Issues:
+1. **Continue Statement Bug** - Line 815: Creates BreakStmt instead of ContinueStmt
+
+### Missing Node Types:
+1. **UnionDecl**       - For union type declarations
+2. **EnumDecl**        - For enum type declarations
+3. **TupleType**       - For tuple type specifications
+4. **ArrayType**       - For array type specifications
+5. **TupleLit**        - For tuple literals
+6. **UnionLit**        - For union literals
+
+### Missing Parsing Logic:
+1. **Union Types**        - `union { field: Type, ... }`
+2. **Enum Types**         - `enum { VALUE1, VALUE2 }`
+3. **Tuple Types**        - `(Type1, Type2)` return types and declarations
+4. **Array Types**        - `[4]S32` or `[]S32` type specifications
+5. **Tuple Literals**     - `(value1, value2)`
+6. **Tuple Destructuring** - `(a, b) := tuple_expr`
+7. **Union Literals**     - `UnionType{ field = value }`
+8. **Enum Value Access**  - `Enum.VALUE`
+
+### Expression Parsing:
+1. **Tuple Access**          - `tuple.0`, `tuple.1` indexing
+2. **Union Field Access**    - `union.field` validation
+3. **Complete Array Indexing** - Currently basic, needs enhancement
+
+### Statement Parsing:
+1. **Type Alias Declarations**      - `NumberType :: S32` (partially exists)
+2. **Enhanced Variable Declarations** - All syntax variations from examples
+
+---
+
+## SEMANTIC ANALYZER
+
+### Critical Issues:
+1. **Incomplete foo() procedure** - Missing many statement type handlers
+2. **Limited Type System**       - Only basic types implemented
+3. **No Struct Processing**      - Structs parsed but not analyzed
+
+### Missing Type System Components:
+1. **Union Type**          - Add to SemaType union with field validation
+2. **Tuple Type**          - Add to SemaType with element type tracking
+3. **Array Type**          - Proper array type system beyond literals
+4. **Enum Type**           - Enum type with value constraints
+5. **Complete Base Types**  - All numeric types, string types, etc.
+
+### Missing Symbol Processing:
+1. **Struct Members**    - Member access validation and type checking
+2. **Union Fields**      - Field access safety checking
+3. **Tuple Elements**    - Type validation for destructuring
+4. **Enum Values**       - Value range validation
+5. **Module Imports**    - Cross-module symbol resolution
+
+### Missing Expression Analysis:
+1. **Tuple Operations**          - Creation, access, destructuring
+2. **Union Operations**          - Field access, type safety
+3. **Array Operations**          - Bounds checking, type validation
+4. **Struct Operations**         - Member access, literal validation
+5. **Complete Operator Support** - All operators from examples
+6. **Type Casting**              - Comprehensive cast validation
+
+### Missing Statement Analysis:
+1. **IfStmt**             - Condition type checking, branch analysis
+2. **LoopStmt**           - All loop variants, continue/break context
+3. **BreakStmt/ContinueStmt** - Loop context validation
+4. **ReturnStmt**         - Type checking, void/non-void procedures
+5. **ExprStmt**           - All expression statement types
+
+### Missing Analysis Features:
+1. **Type Inference**    - Complete for all constructs
+2. **Error Reporting**   - Better error messages and locations
+3. **Symbol Resolution** - Complete scope handling
+4. **Type Equality**     - Proper type comparison
+5. **Memory Safety**     - Pointer/reference validation
+
+---
+
+## COMPLETE FEATURE IMPLEMENTATION ORDER
+
+### Phase 1: Critical Fixes
+1. Fix continue statement bug in parser
+2. Add missing statement handlers in semantic analyzer foo()
+3. Basic type system completion
+
+### Phase 2: Core Types
+1. Implement struct processing in semantic analyzer
+2. Add tuple type support (parser + semantic analyzer)
+3. Add array type system (parser + semantic analyzer)
+
+### Phase 3: Advanced Types
+1. Add union type support (parser + semantic analyzer)
+2. Add enum type support (parser + semantic analyzer)
+3. Complete type inference system
+
+### Phase 4: Language Features
+1. Complete expression analysis (all operators)
+2. Complete statement analysis (all control flow)
+3. Enhanced error reporting
+
+### Phase 5: System Features
+1. Module system improvements
+2. Better symbol resolution
+3. Performance optimizations
+
+---
+
+## SPECIFIC EXAMPLES THAT NEED IMPLEMENTATION
+
+### Array Example:
+- Array indexing: `a[0]`
+- Array literals: `[1, 2, 3, 4]`
+
+### Break/Continue Examples:
+- Loop control flow validation
+
+### Call Example:
+- Procedure calls with type checking
+- Default parameter handling
+- Parameter type validation
+
+### If Example:
+- Condition type checking
+- Branch analysis
+
+### Literals Example:
+- All literal types and validation
+
+### Loop Example:
+- All loop variants (for, while, infinite)
+- Loop variable scoping
+- Continue/break context validation
+
+### Operators Example:
+- All arithmetic operators
+- All comparison operators
+- All logical operators
+- All bitwise operators
+- All assignment operators
+- Pointer operators
+
+### Pointer Example:
+- Reference creation: `&a`
+- Dereference: `b.*`
+- Pointer type safety
+
+### Return Example:
+- Return type validation
+- Void vs non-void procedures
+
+### Struct Example:
+- Struct declarations
+- Member access: `a.x`
+- Struct literals: `Vec2{1, 2}`
+
+### Test/Typedef Examples:
+- Type aliases: `NumberType :: S32`
+- Type annotation: `b: NumberType = 2`
+
+### Tuples Example:
+- Tuple return types: `(S32, S32)`
+- Tuple literals: `(a, b)`
+- Tuple destructuring: `(a, b) := make_pair(1, 2)`
+- Tuple access: `ab.0`
+
+### Union Example:
+- Union declarations: `union { float: F32, int: S32 }`
+- Union field access: `a.float = 1.0`
+- Union literals: `Data{}`
+
+### Var Example:
+- Variable initialization: `a := 1`
+- Constant initialization: `b :: 2`
+- Type annotation: `c: S32`
+- Assignment: `c = a`
+- Combined: `d: S32 = 3` and `e: S32 : 4`
+
+## IMPLEMENTATION STATUS MATRIX
+
+| Feature             | Scanner | Parser  | Semantic Analyzer |
+|---------------------|---------|---------|-------------------|
+| Basic Types         | ✓       | ✓       | Partial           |
+| Variables           | ✓       | ✓       | Partial           |
+| Constants           | ✓       | ✓       | Partial           |
+| Procedures          | ✓       | ✓       | Partial           |
+| Control Flow        | ✓       | ✓       | Minimal           |
+| Structs             | ✓       | ✓       | Minimal           |
+| Arrays              | ✓       | Basic   | Basic             |
+| Pointers            | ✓       | ✓       | Basic             |
+| Unions              | Missing | Missing | Missing           |
+| Tuples              | Missing | Missing | Missing           |
+| Enums               | Missing | Missing | Missing           |
+| Modules             | ✓       | Basic   | Basic             |
+| All Operators       | ✓       | ✓       | Partial           |
+| Type System         | ✓       | Basic   | Minimal           |
+| Error Handling      | Basic   | Basic   | Minimal           |

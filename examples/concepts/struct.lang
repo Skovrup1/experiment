@@ -1,13 +1,13 @@
 Vec2 :: struct {
-    x: I32,
-    y: I32,
+    x: S32,
+    y: S32,
 }
 
-make_vec2 :: (x: I32, y: I32) -> Vec2 {
+make_vec2 :: (x: S32, y: S32) -> Vec2 {
     return {1, 2};
 }
 
-main :: () -> I32 {
+main :: () -> S32 {
     a := Vec2{1, 2};
     return a.x;
 }
@@ -16,9 +16,9 @@ main :: () -> I32 {
 // How will it look like together with zero initialization and undefined initialization?
 /*
 Vec3 :: struct {
-    x: I32,
-    y: I32,
-    z: I32 = 1,
+    x: S32,
+    y: S32,
+    z: S32 = 1,
 }
 */
 

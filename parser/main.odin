@@ -230,8 +230,6 @@ consume_comments :: proc(p: ^Parser) {
 next :: proc(p: ^Parser) -> scanner.TokenIndex {
 	tok := scanner.next_token(&p.scan)
 
-	fmt.println(tok)
-
 	if tok.kind == .Error {
 		panic("error from scanner")
 	}

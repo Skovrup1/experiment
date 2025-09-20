@@ -1,0 +1,9 @@
+Vec2 :: struct {
+    x: S32,
+    y: S32,
+}
+
+main :: () -> S32 {
+    a := Vec2{1, 2};
+    return a.x;
+}

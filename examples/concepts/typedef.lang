@@ -1,6 +1,6 @@
-NumberType :: I32;
+NumberType :: S32;
 
-main :: () -> I32 {
+main :: () -> S32 {
     b: NumberType = 2;
 
     return b;

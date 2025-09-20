@@ -1,0 +1,13 @@
+// todo
+
+add :: (a: S32, b: S32) -> S32 {
+
+}
+
+add :: (a: Vec2, b: Vec2) -> Vec2 {
+
+}
+
+// maybe operator overloading
+// operator+ :: (a: Vec2, b: Vec2) -> Vec2 {
+// }

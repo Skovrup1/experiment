@@ -1,20 +1,20 @@
-a :: () -> I32 {
+a :: () -> S32 {
     return 0;
 }
 
-b :: (x: I32, y: I32) -> I32 {
+b :: (x: S32, y: S32) -> S32 {
     return x + y;
 }
 
-c :: (x := 0, y := 2) -> I32 {
+c :: (x := 0, y := 2) -> S32 {
     return x + y;
 }
 
-d :: (x: I32 = 0, y: I32 = 2) -> I32 {
+d :: (x: S32 = 0, y: S32 = 2) -> S32 {
     return x + y;
 }
 
-main :: () -> I32 {
+main :: () -> S32 {
     a();
 
     b(1, true);

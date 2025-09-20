@@ -3,6 +3,8 @@ package main
 import "parser"
 import "scanner"
 import "sema"
+import "tac"
+import "test"
 
 import "core:fmt"
 import "core:os"
@@ -21,7 +23,7 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/typedef.lang")
+	handle, open_err := os.open("examples/pointer.lang")
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -42,10 +44,12 @@ main :: proc() {
 	p := parser.make_parser(source)
 	ast := parser.parse(&p)
 
+    /*
 	for node, i in ast {
 		fmt.println(i, node)
 	}
 	fmt.println()
+    */
 
 	parser.print_tree(&p)
 	fmt.println()

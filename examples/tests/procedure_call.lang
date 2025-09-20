@@ -1,0 +1,7 @@
+a :: () -> S32 {
+    return 0;
+}
+
+main :: () -> S32 {
+    return a();
+}

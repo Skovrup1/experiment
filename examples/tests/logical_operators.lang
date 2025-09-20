@@ -1,0 +1,6 @@
+main :: () -> S32 {
+    a := true || false;
+    b := true && false;
+    c := !true;
+    return 0;
+}

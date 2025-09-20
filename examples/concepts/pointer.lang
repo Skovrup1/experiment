@@ -1,4 +1,4 @@
-main :: () -> *I32 {
+main :: () -> S32 {
     a := 0;
     b := &a; // reference
     return b.*; // dereference
