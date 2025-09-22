@@ -1,0 +1,7 @@
+make_pair :: (a: S32, b: S32) -> (S32, S32) {
+    return (a, b);
+}
+
+main :: () -> S32 {
+    return 0;
+}

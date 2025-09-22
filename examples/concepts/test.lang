@@ -1,16 +1,9 @@
-NumberType :: S32;
+main :: () -> S32 {
+    a := 0;
+    a := 1;
 
-foo :: () -> S32 {
-    b := 0;
-    return b;
-}
+    ab := (1, 2);
+    a = ab.0;
 
-bar :: () -> Bool {
-    b := true;
-    return b;
-}
-
-number :: () -> NumberType {
-    b : NumberType = 2;
-    return b;
+    return a;
 }

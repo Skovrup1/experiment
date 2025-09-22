@@ -1,0 +1,9 @@
+greet :: (name := "world") -> S32 {
+    return 0;
+}
+
+main :: () -> S32 {
+    greet();
+    greet("hello");
+    return 0;
+}

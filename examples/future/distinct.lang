@@ -1,0 +1,5 @@
+// a way to make types that are identical but don't type match
+
+Index :: Type U32
+
+a: Index = U32(4) // fails

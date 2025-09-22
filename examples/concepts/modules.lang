@@ -1,11 +1,9 @@
-// todo
+import "test";
 
-module main {
-
+random_int :: () -> S32 {
+    return 0;
 }
 
-module test {
-
+random_uint :: () -> U32 {
+    return 0;
 }
-
-// #import "test"

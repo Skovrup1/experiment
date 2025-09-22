@@ -46,11 +46,17 @@ Procedure :: struct {
 	params:      []TypeIndex,
 }
 
+Array :: struct {
+	element_type: TypeIndex,
+	length:       int,
+}
+
 SemaType :: union {
 	Primitive,
 	Reference,
 	Structure,
 	Procedure,
+	Array,
 }
 
 TypeIndex :: distinct u32
@@ -82,12 +88,16 @@ hash_type :: proc(type: SemaType) -> u64 {
 		for param in v.params {
 			acc = hash_combine(acc, u64(param))
 		}
+	case Array:
+		acc = hash_combine(acc, 5)
+		acc = hash_combine(acc, u64(v.element_type))
+		acc = hash_combine(acc, u64(v.length))
 	}
 
 	return acc
 }
 
-// note: saving for future use
+/*
 equal_types :: proc(type_a: SemaType, type_b: SemaType) -> bool {
 	if type_of(type_a) != type_of(type_a) {
 		return false
@@ -120,7 +130,7 @@ equal_types :: proc(type_a: SemaType, type_b: SemaType) -> bool {
 	}
 
 	return false
-}
+}*/
 
 type_exists :: proc(a: ^Analyzer, type: SemaType) -> (TypeIndex, bool) {
 	return a.type_map[hash_type(type)]
@@ -278,24 +288,34 @@ lookup_type :: proc(
 
 	node := a.p.nodes[node_index]
 
-	if type_node, ok := node.(parser.TypeSpec); ok {
-		name := parser.token_to_string(a.p, type_node.token)
-
+	#partial switch v in node {
+	case parser.PrimType:
+		name := parser.token_to_string(a.p, v.token)
 		if type_kind, ok := is_base_type(name); ok {
-			if type_node.is_ptr {
-				type_index := get_or_add_type(a, Reference{TypeIndex(type_kind)})
-				return type_index, true
-			} else {
-				return TypeIndex(type_kind), true
-			}
+			return TypeIndex(type_kind), true
 		}
-
-		if symbol_index, found := lookup_symbol(a, name); found {
-			symbol := a.symbols[symbol_index]
-			if symbol.kind == .Type {
-				return symbol.type, true
-			}
+	case parser.RefType:
+		inner_type, ok := lookup_type(a, v.type, loc)
+		if ok {
+			type_index := get_or_add_type(a, Reference{inner_type})
+			return type_index, true
 		}
+	case parser.TupleType:
+		member_types := make([dynamic]TypeIndex, len(v.types))
+		for type_node, i in v.types {
+			member_types[i], _ = lookup_type(a, type_node, loc)
+		}
+		type_index := get_or_add_type(a, Structure{member_types[:]})
+		return type_index, true
+	case parser.StructType:
+		member_types := make([dynamic]TypeIndex, len(v.types))
+		for type_node, i in v.types {
+			member_types[i], _ = lookup_type(a, type_node, loc)
+		}
+		type_index := get_or_add_type(a, Structure{member_types[:]})
+		return type_index, true
+	case parser.ArrayType:
+		panic("array types not yet implemented")
 	}
 
 	panic(fmt.tprintf("failed to lookup type at %v\n", loc))
@@ -382,16 +402,6 @@ collect_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		}
 		add_symbol_to_current_scope(a, ident, symbol)
 	case parser.ParamDecl:
-		ident := parser.token_to_string(a.p, v.token)
-
-		declared_type, _ := lookup_type(a, v.type)
-
-		symbol := Symbol {
-			kind  = .Param,
-			ident = ident,
-			type  = declared_type,
-		}
-		add_symbol_to_current_scope(a, ident, symbol)
 	case parser.MemberDecl:
 	case parser.ProcDecl:
 		ident := parser.token_to_string(a.p, v.token)
@@ -493,6 +503,127 @@ foo :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		}
 	case parser.MemberDecl:
 	case parser.StructDecl:
+	case parser.DestructVarDecl:
+		expr_type := infer(a, v.expr)
+
+		declared_type := expr_type
+		if v.type != parser.INVALID_NODE {
+			declared_type, _ = lookup_type(a, v.type)
+		}
+
+		if tuple_type, ok := a.types[expr_type].(Structure); ok {
+			if len(v.elements) == len(tuple_type.members) {
+				for element_index, tuple_index in v.elements {
+					ident_node := a.p.nodes[element_index]
+					ident_lit := ident_node.(parser.IdentLit)
+					ident_name := parser.token_to_string(a.p, ident_lit.token)
+
+					element_type := tuple_type.members[tuple_index]
+					if v.type != parser.INVALID_NODE {
+						element_type = declared_type
+					}
+
+					symbol := Symbol {
+						kind  = .Var,
+						ident = ident_name,
+						type  = element_type,
+					}
+					add_symbol_to_current_scope(a, ident_name, symbol)
+				}
+			} else {
+				panic(
+					fmt.tprintf(
+						"length mismatch in tuple destructuring: %v elements, %v type members",
+						len(v.elements),
+						len(tuple_type.members),
+					),
+				)
+			}
+		} else {
+			panic(fmt.tprintf("cannot destructure non-tuple type: %v", a.types[expr_type]))
+		}
+
+	case parser.DestructConstDecl:
+		expr_type := infer(a, v.expr)
+
+		expected_type := expr_type
+		if v.type != parser.INVALID_NODE {
+			expected_type, _ = lookup_type(a, v.type)
+		}
+
+		if v.type != parser.INVALID_NODE && expected_type != expr_type {
+			if expected_type != expr_type {
+				panic(
+					fmt.tprintf(
+						"type mismatch in constant declaration: expected %v, got %v",
+						a.types[expected_type],
+						a.types[expr_type],
+					),
+				)
+			}
+		}
+
+		if tuple_type, ok := a.types[expr_type].(Structure); ok {
+			if len(v.elements) == len(tuple_type.members) {
+				for element_index, tuple_index in v.elements {
+					ident_node := a.p.nodes[element_index]
+					ident_lit := ident_node.(parser.IdentLit)
+					ident_name := parser.token_to_string(a.p, ident_lit.token)
+
+					element_type := tuple_type.members[tuple_index]
+					symbol := Symbol {
+						kind     = .Var,
+						ident    = ident_name,
+						type     = element_type,
+						is_const = true,
+					}
+					add_symbol_to_current_scope(a, ident_name, symbol)
+				}
+			} else {
+				panic(
+					fmt.tprintf(
+						"length mismatch in tuple destructuring: %v elements, %v type members",
+						len(v.elements),
+						len(tuple_type.members),
+					),
+				)
+			}
+		} else {
+			panic(fmt.tprintf("cannot destructure non-tuple type: %v", a.types[expr_type]))
+		}
+
+	case parser.DestructAssign:
+		expr_type := infer(a, v.expr)
+
+		if tuple_type, ok := a.types[expr_type].(Structure); ok {
+			if len(v.elements) == len(tuple_type.members) {
+				for target_index, tuple_index in v.elements {
+
+					target_type := infer(a, target_index)
+					element_type := tuple_type.members[tuple_index]
+
+					if target_type != element_type {
+						panic(
+							fmt.tprintf(
+								"type mismatch in tuple assignment: %v = %v",
+								target_type,
+								element_type,
+							),
+						)
+					}
+				}
+			} else {
+				panic(
+					fmt.tprintf(
+						"length mismatch in tuple assignment: %v elements, %v type members",
+						len(v.elements),
+						len(tuple_type.members),
+					),
+				)
+			}
+		} else {
+			panic(fmt.tprintf("cannot destructure non-tuple type: %v", a.types[expr_type]))
+		}
 	case parser.BlockStmt:
 		enter_scope(a)
 		for stmt in v.stmts {
@@ -573,6 +704,18 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> TypeIndex {
 		}
 
 		panic(fmt.tprintf("undeclared identifier: %v\n", ident))
+	case parser.TupleLit:
+		types := make([dynamic]TypeIndex, 0, 2)
+		for value in v.values {
+			append(&types, infer(a, value))
+		}
+		return get_or_add_type(a, Structure{types[:]})
+	case parser.ArrayLit:
+		element_type := infer(a, v.values[0])
+		for i in 1 ..< len(v.values) {
+			check(a, v.values[i], element_type)
+		}
+		return get_or_add_type(a, Array{element_type, len(v.values)})
 	case parser.CallExpr:
 		callee_node := a.p.nodes[v.callee]
 
@@ -700,9 +843,13 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> TypeIndex {
 		return inner
 	case parser.IndexExpr:
 		base := infer(a, v.base)
-		//offset := infer(a, v.offset)
+		base_type := a.types[base]
 
-		return base
+		if array_type, ok := base_type.(Array); ok {
+			return array_type.element_type
+		} else {
+			panic(fmt.tprintf("indexing invalid type %v", array_type))
+		}
 	case:
 		panic(fmt.tprintf("error: cannot infer type of node %v\n", v))
 	}

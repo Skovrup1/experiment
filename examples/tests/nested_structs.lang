@@ -1,0 +1,14 @@
+Vec2 :: struct {
+    x: S32,
+    y: S32,
+}
+
+Rect :: struct {
+    min: Vec2,
+    max: Vec2,
+}
+
+main :: () -> S32 {
+    r := Rect{Vec2{0, 0}, Vec2{10, 10}};
+    return r.min.x;
+}

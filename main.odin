@@ -4,7 +4,6 @@ import "parser"
 import "scanner"
 import "sema"
 import "tac"
-import "test"
 
 import "core:fmt"
 import "core:os"
@@ -13,7 +12,7 @@ import "core:mem"
 import vmem "core:mem/virtual"
 
 // stages of compilation
-// scanner -> parser -> sema -> tac -> pal
+// scanner -> parser -> sema -> tac -> pal -> emit
 
 main :: proc() {
 	arena: vmem.Arena
@@ -23,7 +22,13 @@ main :: proc() {
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
 
-	handle, open_err := os.open("examples/pointer.lang")
+	if len(os.args) < 2 {
+		fmt.eprintf("Usage: main <file>\n")
+		os.exit(1)
+	}
+
+	file_path := os.args[1]
+	handle, open_err := os.open(file_path)
 	defer os.close(handle)
 
 	if open_err != os.ERROR_NONE {
@@ -41,10 +46,18 @@ main :: proc() {
 
 	fmt.println(string(source))
 
-	p := parser.make_parser(source)
+	s := scanner.make_scanner(source)
+	scanner.consume_all(&s)
+
+	for token, i in s.tokens {
+		fmt.println(i, token)
+	}
+    fmt.println()
+
+	p := parser.make_parser(source, s.tokens[:], file_path)
 	ast := parser.parse(&p)
 
-    /*
+	/*
 	for node, i in ast {
 		fmt.println(i, node)
 	}

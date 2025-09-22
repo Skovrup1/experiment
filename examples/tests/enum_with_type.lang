@@ -1,0 +1,9 @@
+fruitV2 :: enum(U8) {
+    Apple,
+    Pear,
+    Orange,
+}
+
+main :: () -> S32 {
+    return 0;
+}

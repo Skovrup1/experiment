@@ -3,8 +3,21 @@ Vec2 :: struct {
     y: S32,
 }
 
+// struct lit: {}
+// call expr:  type_name{}
+
+a :: Vec2{1, 2};
+b: Vec2 : {1, 2};
+c: Vec2 = {1, 2};
+
+// infer the type of struct literal
 make_vec2 :: (x: S32, y: S32) -> Vec2 {
-    return {1, 2};
+    //return {x, y};
+}
+
+// named values
+foo :: () -> Vec2 {
+    //return {y = 1};
 }
 
 main :: () -> S32 {
@@ -19,12 +32,5 @@ Vec3 :: struct {
     x: S32,
     y: S32,
     z: S32 = 1,
-}
-*/
-
-/* todo 
-// named values
-foo :: () -> Vec2 {
-    return {y = 1};
 }
 */

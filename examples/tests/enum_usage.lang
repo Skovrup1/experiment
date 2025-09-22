@@ -4,15 +4,8 @@ fruit :: enum {
     Orange,
 }
 
-fruitV2 :: enum(U8) {
-    Apple,
-    Pear,
-    Orange,
-}
-
 main :: () -> Bool {
     a := fruit.Apple;
     b := fruit.Pear;
-
     return a == b;
 }
