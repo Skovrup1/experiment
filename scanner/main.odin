@@ -103,7 +103,7 @@ Token :: struct {
 	end:   TokenIndex,
 }
 
-ScannerFlag :: bit_set[enum{
+ScannerFlag :: bit_set[enum {
 	ScanComments,
 }]
 
@@ -149,7 +149,7 @@ make_token :: proc(s: ^Scanner, kind: TokenKind) -> Token {
 get_position :: proc(source: []u8, offset: TokenIndex) -> (int, int) {
 	current_line := 1
 	current_column := 1
-    offset := int(offset)
+	offset := int(offset)
 
 	for i := 0; i < offset && i < len(source); i += 1 {
 		if source[i] == '\n' {
@@ -368,13 +368,19 @@ next_token :: proc(s: ^Scanner) -> Token {
 		return make_token(s, .Period)
 	case '/':
 		if peek(s) == '/' {
+			line := line_comment(s)
 			if .ScanComments in s.flags {
-				return line_comment(s)
+				return line
+			} else {
+				return next_token(s)
 			}
 		}
 		if peek(s) == '*' {
+			block := block_comment(s)
 			if .ScanComments in s.flags {
-				return block_comment(s)
+				return block
+			} else {
+				return next_token(s)
 			}
 		}
 		if peek(s) == '=' {
