@@ -247,6 +247,11 @@ identifier :: proc(s: ^Scanner) -> Token {
 		advance(s)
 	}
 
+	if peek(s) == '{' {
+		advance(s)
+		return make_token(s, .StructLit)
+	}
+
 	return make_token(s, identifier_type(s))
 }
 

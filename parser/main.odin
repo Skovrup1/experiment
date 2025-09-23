@@ -424,13 +424,11 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 	case .Identifier:
 		token := p.cursor
 		next(p)
-
-		if peek(p) == .LBrace {
-			next(p)
-			return parse_struct_lit(p, token)
-		}
-
 		return add_node(p, IdentLit{token})
+	case .StructLit:
+		token := p.cursor
+		next(p)
+		return parse_struct_lit(p, token)
 	case .String:
 		token := p.cursor
 		next(p)

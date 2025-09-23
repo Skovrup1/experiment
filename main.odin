@@ -12,6 +12,7 @@ import "core:mem"
 import vmem "core:mem/virtual"
 
 // stages of compilation
+// tokens -> ast -> typed ast -> three address code -> portable assembly language -> assembly language
 // scanner -> parser -> sema -> tac -> pal -> emit
 
 main :: proc() {
