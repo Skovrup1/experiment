@@ -1,5 +1,5 @@
-greet :: (name := "world") -> S32 {
-    return 0;
+greet :: (name := "world") -> String {
+    return name;
 }
 
 main :: () -> S32 {

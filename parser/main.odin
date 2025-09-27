@@ -328,7 +328,6 @@ allow :: proc(p: ^Parser, allowed: scanner.TokenKind, loc := #caller_location) -
 }
 
 add_node :: proc(p: ^Parser, node: Node) -> NodeIndex {
-	fmt.println(node)
 	append(&p.nodes, node)
 	return NodeIndex(len(p.nodes) - 1)
 }
