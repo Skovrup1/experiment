@@ -1,9 +1,0 @@
-greet :: (name := "world") -> String {
-    return name;
-}
-
-main :: () -> S32 {
-    greet();
-    greet("hello");
-    return 0;
-}

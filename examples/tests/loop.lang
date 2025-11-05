@@ -1,0 +1,41 @@
+main :: () -> S32 {
+    // full loop
+    loop i := 0; i < 10; i += 1 {
+    }
+
+    // missing initializer
+    i := 0;
+    loop ; i < 10; i += 1 {
+    }
+
+    // missing incrementer
+    loop j := 0; j < 10; {
+        j += 1;
+    }
+
+    // while loop
+    k := 0;
+    loop ;k < 10; {
+        k += 1;
+    }
+
+    // while loop 2
+    /* todo
+    l := 0;
+    loop l < 10 {
+
+    }
+    */
+
+    // unbound loop
+    loop ;; {
+        break;
+    }
+
+    // unbound loop 2
+    loop {
+        break;
+    }
+
+    return 0;
+}

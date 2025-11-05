@@ -1,9 +1,0 @@
-Data :: union {
-    float: F32,
-    int: S32,
-    bool: Bool,
-}
-
-main :: () -> S32 {
-    return 0;
-}

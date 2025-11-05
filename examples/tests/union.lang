@@ -9,5 +9,6 @@ main :: () -> S32 {
     a.float = 1.0;
     a.int = 1;
     a.bool = true;
+
     return a.int;
 }

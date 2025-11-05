@@ -1,8 +1,0 @@
-Vec2 :: struct {
-    x: S32,
-    y: S32,
-}
-
-main :: () -> S32 {
-    return 0;
-}

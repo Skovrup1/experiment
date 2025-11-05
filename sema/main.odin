@@ -331,7 +331,7 @@ lookup_type :: proc(
 
 // note: this code and casting needs to be rewritten
 is_type_name :: proc(name: string) -> bool {
-	return name == "Bool" || name == "S32" || name == "F32" || name == "String"
+	return name == "Bool" || name == "S32" || name == "F32" || name == "String" || name == "U32"
 }
 
 // note: roll is_type_name and get_type_from_name into
@@ -346,14 +346,17 @@ get_type_from_name :: proc(name: string) -> TypeIndex {
 		return TypeIndex(BaseType.F32)
 	case "S32":
 		return TypeIndex(BaseType.S32)
+	case "U32":
+		return TypeIndex(BaseType.U32)
 	case "Bool":
 		return TypeIndex(BaseType.Bool)
 	}
 	panic(fmt.tprintf("unknown type name: %v", name))
 }
 
+// note: fix
 is_numeric_type :: proc(type_index: TypeIndex) -> bool {
-	return type_index == TypeIndex(BaseType.F32) || type_index == TypeIndex(BaseType.S32)
+	return type_index == TypeIndex(BaseType.F32) || type_index == TypeIndex(BaseType.S32) || type_index == TypeIndex(BaseType.U32)
 }
 
 collect_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {

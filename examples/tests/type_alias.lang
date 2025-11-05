@@ -1,6 +1,0 @@
-Number :: S32;
-
-main :: () -> S32 {
-    a: Number = 42;
-    return a;
-}

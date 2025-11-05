@@ -1,7 +1,0 @@
-add :: (x: S32, y: S32) -> S32 {
-    return x + y;
-}
-
-main :: () -> S32 {
-    return add(1, 2);
-}
