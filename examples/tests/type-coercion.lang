@@ -1,3 +1,0 @@
-main :: () -> U32 {
-    return 0; // integer literal should coerce into U32
-}

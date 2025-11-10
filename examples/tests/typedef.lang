@@ -1,7 +1,0 @@
-NumberType :: S32;
-
-main :: () -> S32 {
-    b: NumberType = 2;
-
-    return b;
-}

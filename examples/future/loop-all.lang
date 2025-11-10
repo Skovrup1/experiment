@@ -1,6 +1,0 @@
-// all interations will be executed concurrently
-// continue & break use masks
-// local is a lane private variable
-loop all i := 0; i < 16; i += 1 {
-    local a := 0
-}

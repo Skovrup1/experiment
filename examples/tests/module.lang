@@ -1,9 +1,0 @@
-import "test";
-
-random_int :: () -> S32 {
-    return 0;
-}
-
-random_uint :: () -> U32 {
-    return U32(0);
-}

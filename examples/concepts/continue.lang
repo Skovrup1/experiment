@@ -1,7 +1,0 @@
-main :: () -> S32 {
-    loop {
-        continue;
-    }
-
-    return 0;
-}
