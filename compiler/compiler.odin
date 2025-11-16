@@ -16,8 +16,9 @@ main :: proc() {
 	context.allocator = vmem.arena_allocator(&arena)
 	defer free_all(context.allocator)
 	defer free_all(context.temp_allocator)
+	defer vmem.arena_destroy(&arena)
 
-	handle, open_err := os.open("examples/for.lang")
+	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)
@@ -25,27 +26,44 @@ main :: proc() {
 	source_buffer, read_ok := os.read_entire_file(handle)
 	ensure(read_ok == true)
 
-    source := string(source_buffer)
+	source := string(source_buffer)
 	fmt.println(source)
 
-	l := lexer.make_scanner(source)
+	s := lexer.make_scanner(source)
+	tokens := lexer.scan_tokens(&s)
 
-	tokens := lexer.scan_tokens(&l)
-	for token, i in tokens {
-		fmt.println(i, token)
+	if len(s.errors) > 0 {
+		for err, i in s.errors {
+			fmt.println(i, err)
+		}
+		fmt.println()
+	} else {
+		for token, i in tokens {
+			fmt.println(i, token)
+		}
+		fmt.println()
 	}
 
 	p := parser.make_parser(source, tokens[:])
 	ast := parser.parse(&p)
 
-	for node, i in p.nodes {
-		fmt.println(i, node)
+	if len(p.errors) > 0 {
+		for err, i in p.errors {
+			fmt.println(i, err)
+		}
+		fmt.println()
+	} else {
+		for node, i in p.nodes {
+			fmt.println(i, node)
+		}
+		fmt.println()
 	}
 
-	parser.print_ast(&p)
+	fmt.println(parser.ast_to_string(&p))
 
-    parser.print_program(&p)
+	fmt.println(size_of(parser.Node))
+	fmt.println(len(p.nodes))
 
-    fmt.println(size_of(parser.NodeData))
-    fmt.println(size_of(parser.NodeData) * len(p.data))
+	fmt.println(size_of(parser.Node) * len(p.nodes))
+	fmt.println(size_of(u32) * len(p.data))
 }

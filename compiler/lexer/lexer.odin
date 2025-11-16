@@ -14,7 +14,7 @@ TokenKind :: enum u8 {
 	Slash, // /
 	Percent, // %
 	Equal, // =
-	Var, // :=
+	ColonEqual, // :=
 	DoubleEqual, // ==
 	NotEqual, // !=
 	Less, // <
@@ -31,7 +31,7 @@ TokenKind :: enum u8 {
 	Dot, // .
 	Arrow, // ->
 	//
-    Def,
+	Def,
 	If,
 	Else,
 	For,
@@ -49,10 +49,17 @@ Token :: struct {
 TokenIndex :: distinct u32
 INVALID_TOKEN := max(TokenIndex)
 
+LexerError :: struct {
+	message:  string,
+	position: TokenIndex,
+}
+
 Scanner :: struct {
 	source:   string,
 	tokens:   [dynamic]Token,
+	errors:   [dynamic]LexerError,
 	keywords: map[string]TokenKind,
+	//
 	start:    TokenIndex,
 	cursor:   TokenIndex,
 }
@@ -60,7 +67,7 @@ Scanner :: struct {
 make_keywords :: proc() -> map[string]TokenKind {
 	keywords := make(map[string]TokenKind)
 
-    keywords["def"] = .Def
+	keywords["def"] = .Def
 	keywords["if"] = .If
 	keywords["else"] = .Else
 	keywords["for"] = .For
@@ -73,10 +80,11 @@ make_keywords :: proc() -> map[string]TokenKind {
 
 make_scanner :: proc(source: string) -> Scanner {
 	tokens := make([dynamic]Token)
+	errors := make([dynamic]LexerError)
 	keywords := make_keywords()
 	start :: 0
 	current :: 0
-	return Scanner{source, tokens, keywords, start, current}
+	return Scanner{source, tokens, errors, keywords, start, current}
 }
 
 is_at_end :: proc(s: ^Scanner) -> bool {
@@ -110,11 +118,21 @@ add_token :: proc(s: ^Scanner, kind: TokenKind) {
 	append(&s.tokens, token)
 }
 
-skip_whitespace :: proc(s: ^Scanner) {
+add_synthetic_token :: proc(s: ^Scanner, kind: TokenKind, pos: TokenIndex) {
+	token := Token{kind, pos, pos}
+	append(&s.tokens, token)
+}
+
+add_error :: proc(s: ^Scanner, message: string, position: TokenIndex) {
+	error := LexerError{message, position}
+	append(&s.errors, error)
+}
+
+skip :: proc(s: ^Scanner) {
 	for {
 		char := peek(s)
 		switch char {
-		case ' ', '\r', '\t', '\n':
+		case ' ', '\t', '\r', '\n':
 			advance(s)
 		case:
 			return
@@ -152,7 +170,7 @@ identifier :: proc(s: ^Scanner) {
 }
 
 scan_token :: proc(s: ^Scanner) {
-	skip_whitespace(s)
+	skip(s)
 
 	s.start = s.cursor
 
@@ -220,7 +238,7 @@ scan_token :: proc(s: ^Scanner) {
 	case ':':
 		if peek(s) == '=' {
 			advance(s)
-			add_token(s, .Var)
+			add_token(s, .ColonEqual)
 		} else {
 			add_token(s, .Colon)
 		}
@@ -233,6 +251,7 @@ scan_token :: proc(s: ^Scanner) {
 			identifier(s)
 		} else {
 			add_token(s, .Invalid)
+			add_error(s, "unexpected character", s.start)
 		}
 	}
 }

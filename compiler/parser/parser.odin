@@ -3,6 +3,9 @@ package parser
 import "../lexer"
 
 import "core:fmt"
+import "core:mem"
+import "core:os"
+import "core:strings"
 
 NodeKind :: enum u8 {
 	Invalid = 0,
@@ -23,65 +26,110 @@ NodeKind :: enum u8 {
 	Less,
 }
 
-NodeData :: struct {
-	int_lit:         struct {
-		integer: i64,
-	},
-	var_stmt:        struct {
-		type:  NodeIndex,
-		value: NodeIndex,
-	},
-	param_stmt:      struct {
-		type:  NodeIndex,
-		value: NodeIndex,
-	},
-	block_statement: struct {
-		statements: []NodeIndex,
-	},
-	proc_stmt:       struct {
-		identifier:  lexer.TokenIndex,
-		return_type: NodeIndex,
-		body:        NodeIndex,
-		parameters:  []NodeIndex,
-	},
-	for_stmt:        struct {
-		initial:   NodeIndex,
-		condition: NodeIndex,
-		update:    NodeIndex,
-		body:      NodeIndex,
-	},
-	return_stmt:     struct {
-		value: NodeIndex,
-	},
-	expr_stmt:       struct {
-		expression: NodeIndex,
-	},
-	call_expr:       struct {
-		callee:    NodeIndex,
-		arguments: []NodeIndex,
-	},
-	assign_expr:     struct {
-		left:  NodeIndex,
-		right: NodeIndex,
-	},
-	mul_expr:        struct {
-		left:  NodeIndex,
-		right: NodeIndex,
-	},
-	add_expr:        struct {
-		left:  NodeIndex,
-		right: NodeIndex,
-	},
-	less_expr:       struct {
-		left:  NodeIndex,
-		right: NodeIndex,
-	},
+IntLit :: struct {
+	integer: i64,
+}
+
+VarStmt :: struct {
+	type:  NodeIndex,
+	value: NodeIndex,
+}
+
+BlockStmt :: struct {
+	statements: []NodeIndex,
+}
+
+ProcStmt :: struct {
+	identifier:  lexer.TokenIndex,
+	return_type: NodeIndex,
+	body:        NodeIndex,
+	parameters:  []NodeIndex,
+}
+
+ParamStmt :: struct {
+	type:  NodeIndex,
+	value: NodeIndex,
+}
+
+ForStmt :: struct {
+	initial:   NodeIndex,
+	condition: NodeIndex,
+	update:    NodeIndex,
+	body:      NodeIndex,
+}
+
+ReturnStmt :: struct {
+	value: NodeIndex,
+}
+
+ExprStmt :: struct {
+	expression: NodeIndex,
+}
+
+CallExpr :: struct {
+	callee:    NodeIndex,
+	arguments: []NodeIndex,
+}
+
+AssignExpr :: struct {
+	left:  NodeIndex,
+	right: NodeIndex,
+}
+
+MulExpr :: struct {
+	left:  NodeIndex,
+	right: NodeIndex,
+}
+
+AddExpr :: struct {
+	left:  NodeIndex,
+	right: NodeIndex,
+}
+
+LessExpr :: struct {
+	left:  NodeIndex,
+	right: NodeIndex,
+}
+
+NodeData :: struct #raw_union {
+	int_lit:         IntLit,
+	var_stmt:        VarStmt,
+	param_stmt:      ParamStmt,
+	for_stmt:        ForStmt,
+	block_statement: BlockStmt,
+	proc_stmt:       ProcStmt,
+	return_stmt:     ReturnStmt,
+	expr_stmt:       ExprStmt,
+	call_expr:       CallExpr,
+	assign_expr:     AssignExpr,
+	mul_expr:        MulExpr,
+	add_expr:        AddExpr,
+	less_expr:       LessExpr,
+}
+
+encode_data :: proc(p: ^Parser, data: $T) -> DataIndex {
+	data := data
+	start := DataIndex(len(p.data))
+	length := size_of(T) / size_of(u32)
+
+	slice := mem.slice_ptr(cast(^u32)&data, length)
+	append(&p.data, ..slice)
+
+	return start
+}
+
+decode_data :: proc(p: ^Parser, index: DataIndex, $T: typeid) -> T {
+	length := size_of(T) / size_of(u32)
+	assert(int(index) + length <= len(p.data), "decode index out of bounds")
+
+	slice := p.data[int(index):int(index) + length]
+	return (cast(^T)raw_data(slice))^
 }
 
 DataIndex :: distinct u32
 INVALID_DATA :: max(DataIndex)
 
-Node :: struct {
+Node :: struct #packed {
 	kind:  NodeKind,
 	data:  DataIndex,
 	token: lexer.TokenIndex,
@@ -90,21 +138,30 @@ Node :: struct {
 NodeIndex :: distinct u32
 INVALID_NODE :: max(NodeIndex)
 
+ParserError :: struct {
+	message:  string,
+	position: lexer.TokenIndex,
+}
+
+MAX_PARSER_ERRORS :: 8
+
 Parser :: struct {
 	source:    string,
 	tokens:    []lexer.Token,
 	nodes:     [dynamic]Node,
-	data:      [dynamic]NodeData,
+	data:   [dynamic]u32,
+	errors:    [dynamic]ParserError,
 	cursor:    lexer.TokenIndex,
 	lookahead: lexer.TokenIndex,
 }
 
 make_parser :: proc(source: string, tokens: []lexer.Token) -> Parser {
-	nodes := make([dynamic]Node)
-	data := make([dynamic]NodeData)
+	nodes := make([dynamic]Node, 0, len(tokens))
+	data := make([dynamic]u32, 0, len(tokens))
+	errors := make([dynamic]ParserError)
 	cursor :: 0
 	lookahead :: 1
-	return Parser{source, tokens, nodes, data, cursor, lookahead}
+	return Parser{source, tokens, nodes, data, errors, cursor, lookahead}
 }
 
 next :: proc(p: ^Parser) -> lexer.TokenIndex {
@@ -126,7 +183,7 @@ expect :: proc(p: ^Parser, kind: lexer.TokenKind, loc := #caller_location) {
 	if peek(p) == kind {
 		next(p)
 	} else {
-		panic(fmt.tprintf("expected %v, got %v, at %v", kind, peek(p), loc))
+		add_error(p, fmt.tprintf("expected %v, got %v", kind, peek(p)), p.cursor)
 	}
 }
 
@@ -144,214 +201,312 @@ add_node :: proc(p: ^Parser, node: Node) -> NodeIndex {
 	return NodeIndex(len(p.nodes) - 1)
 }
 
-add_data :: proc(p: ^Parser, data: NodeData) -> DataIndex {
-	append(&p.data, data)
-	return DataIndex(len(p.data) - 1)
+add_error :: proc(p: ^Parser, message: string, position: lexer.TokenIndex) {
+	error := ParserError{message, position}
+	append(&p.errors, error)
 }
 
-print_ast :: proc(p: ^Parser) {
-	print_node :: proc(p: ^Parser, index: NodeIndex, indent := 0) {
-		print_indent :: proc(indent: int) {
+ast_to_string :: proc(p: ^Parser) -> string {
+	builder := strings.builder_make()
+
+	print_node :: proc(p: ^Parser, builder: ^strings.Builder, index: NodeIndex, indent := 0) {
+		print_indent :: proc(builder: ^strings.Builder, indent: int) {
 			for _ in 0 ..< indent {
-				fmt.print(' ')
+				strings.write_byte(builder, ' ')
 			}
 		}
 
 		if index == INVALID_NODE {
-			print_indent(indent)
-			fmt.println("invalid node")
+			print_indent(builder, indent)
+			strings.write_string(builder, "<INVALID>\n")
 			return
 		}
 
 		next_indent := indent + 2
 
 		node := p.nodes[index]
+		token := p.tokens[node.token]
+
 		#partial switch node.kind {
 		case .Primitive:
-			print_indent(indent)
-			fmt.println("PrimitiveType")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Type: ")
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_byte(builder, '\n')
 		case .Identifier:
-			print_indent(indent)
-			fmt.println("IdentifierLiteral")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Identifier: ")
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_byte(builder, '\n')
 		case .Integer:
-			print_indent(indent)
-			fmt.println("IntegerLiteral")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Integer: ")
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_byte(builder, '\n')
 		case .Variable:
-			print_indent(indent)
-			fmt.println("VariableStatement")
+			print_indent(builder, indent)
+			var_stmt := decode_data(p, node.data, VarStmt)
+			strings.write_string(builder, "Variable '")
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(builder, "' :=\n")
+			print_node(p, builder, var_stmt.value, next_indent)
 		case .Block:
-			print_indent(indent)
-			fmt.println("BlockStatement")
-			block_data := p.data[node.data].block_statement
-			for stmt in block_data.statements {
-				print_node(p, stmt, next_indent)
+			print_indent(builder, indent)
+			strings.write_string(builder, "Block:\n")
+			block_stmt := decode_data(p, node.data, BlockStmt)
+			for stmt in block_stmt.statements {
+				print_node(p, builder, stmt, next_indent)
 			}
 		case .Parameter:
-			print_indent(indent)
-			fmt.println("Parameter")
+			print_indent(builder, indent)
+			param_stmt := decode_data(p, node.data, ParamStmt)
+			strings.write_string(builder, "Parameter '")
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(builder, "': ")
+			param_type_token := p.tokens[p.nodes[param_stmt.type].token]
+			strings.write_string(builder, p.source[param_type_token.start:param_type_token.end])
+			strings.write_byte(builder, '\n')
 		case .Procedure:
-			print_indent(indent)
-			fmt.println("ProcedureStatement")
-			proc_data := p.data[node.data].proc_stmt
-			for param in proc_data.parameters {
-				print_node(p, param, next_indent)
+			print_indent(builder, indent)
+			proc_stmt := decode_data(p, node.data, ProcStmt)
+			id_token := p.tokens[proc_stmt.identifier]
+			strings.write_string(builder, "Procedure '")
+			strings.write_string(builder, p.source[id_token.start:id_token.end])
+			strings.write_string(builder, "':\n")
+			if len(proc_stmt.parameters) > 0 {
+				print_indent(builder, next_indent)
+				strings.write_string(builder, "Parameters:\n")
+				for param in proc_stmt.parameters {
+					print_node(p, builder, param, next_indent + 2)
+				}
 			}
-			print_node(p, proc_data.return_type, next_indent)
-			print_node(p, proc_data.body, next_indent)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Returns: ")
+			ret_type_token := p.tokens[p.nodes[proc_stmt.return_type].token]
+			strings.write_string(builder, p.source[ret_type_token.start:ret_type_token.end])
+			strings.write_byte(builder, '\n')
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Body:\n")
+			print_node(p, builder, proc_stmt.body, next_indent + 2)
 		case .For:
-			print_indent(indent)
-			fmt.println("ForStatement")
+			print_indent(builder, indent)
+			strings.write_string(builder, "ForStatement\n")
+			for_stmt := decode_data(p, node.data, ForStmt)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Initial:\n")
+			print_node(p, builder, for_stmt.initial, next_indent + 2)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Condition:\n")
+			print_node(p, builder, for_stmt.condition, next_indent + 2)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Update:\n")
+			print_node(p, builder, for_stmt.update, next_indent + 2)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Body:\n")
+			print_node(p, builder, for_stmt.body, next_indent + 2)
 		case .Return:
-			print_indent(indent)
-			fmt.println("ReturnStatement")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Return:\n")
+			return_stmt := decode_data(p, node.data, ReturnStmt)
+			print_node(p, builder, return_stmt.value, next_indent)
 		case .ExprStmt:
-			print_indent(indent)
-			fmt.println("ExpressionStatement")
+			expr_stmt := decode_data(p, node.data, ExprStmt)
+			print_node(p, builder, expr_stmt.expression, indent)
 		case .Call:
-			print_indent(indent)
-			fmt.println("CallExpression")
+			print_indent(builder, indent)
+			call_expr := decode_data(p, node.data, CallExpr)
+			strings.write_string(builder, "Call ")
+			callee_node := p.nodes[call_expr.callee]
+			callee_token := p.tokens[callee_node.token]
+			strings.write_string(builder, p.source[callee_token.start:callee_token.end])
+			strings.write_string(builder, "():\n")
+			if len(call_expr.arguments) > 0 {
+				print_indent(builder, next_indent)
+				strings.write_string(builder, "Arguments:\n")
+				for arg in call_expr.arguments {
+					print_node(p, builder, arg, next_indent + 2)
+				}
+			}
 		case .Assignment:
-			print_indent(indent)
-			fmt.println("AssignmentExpression")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Assignment (=):\n")
+			assign_expr := decode_data(p, node.data, AssignExpr)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Left:\n")
+			print_node(p, builder, assign_expr.left, next_indent + 2)
+			print_indent(builder, next_indent)
+			strings.write_string(builder, "Right:\n")
+			print_node(p, builder, assign_expr.right, next_indent + 2)
 		case .Addition:
-			print_indent(indent)
-			fmt.println("AdditionExpression")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Addition (+):\n")
+			add_expr := decode_data(p, node.data, AddExpr)
+			print_node(p, builder, add_expr.left, next_indent)
+			print_node(p, builder, add_expr.right, next_indent)
 		case .Multiplication:
-			print_indent(indent)
-			fmt.println("MultiplicationExpression")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Multiplication (*):\n")
+			mul_expr := decode_data(p, node.data, MulExpr)
+			print_node(p, builder, mul_expr.left, next_indent)
+			print_node(p, builder, mul_expr.right, next_indent)
 		case .Less:
-			print_indent(indent)
-			fmt.println("LessExpression")
+			print_indent(builder, indent)
+			strings.write_string(builder, "Less (<):\n")
+			less_expr := decode_data(p, node.data, LessExpr)
+			print_node(p, builder, less_expr.left, next_indent)
+			print_node(p, builder, less_expr.right, next_indent)
 		case:
-			print_indent(indent)
-			fmt.println("unknown node kind: %v", node.kind)
+			print_indent(builder, indent)
+			strings.write_string(builder, fmt.tprintf("<Unknown: %v>\n", node.kind))
 		}
 	}
 
-	print_node(p, NodeIndex(len(p.nodes) - 1))
+	print_node(p, &builder, NodeIndex(len(p.nodes) - 1))
+	return strings.to_string(builder)
 }
 
-print_program :: proc(p: ^Parser) {
-	print_node :: proc(p: ^Parser, index: NodeIndex, indent := 0) {
-		print_indent :: proc(indent: int) {
+program_to_string :: proc(p: ^Parser) -> string {
+	builder := strings.builder_make()
+
+	print_node :: proc(
+		p: ^Parser,
+		builder: ^strings.Builder,
+		index: NodeIndex,
+		indent := 0,
+		parent_prec := 0,
+	) {
+		print_indent :: proc(builder: ^strings.Builder, indent: int) {
 			for _ in 0 ..< indent {
-				fmt.print(' ')
+				strings.write_byte(builder, ' ')
 			}
 		}
 
 		if index == INVALID_NODE {
-			print_indent(indent)
-			fmt.println("invalid node")
+			print_indent(builder, indent)
+			strings.write_string(builder, "invalid node")
 			return
 		}
 
 		next_indent := indent + 4
 
 		node := p.nodes[index]
+		token := p.tokens[node.token]
+		node_prec := infix_prec(token.kind) if infix_prec(token.kind) != 0 else 99
+		needs_parens := node_prec < parent_prec
+
+		if needs_parens {
+			strings.write_byte(builder, '(')
+		}
+
 		#partial switch node.kind {
 		case .Primitive:
 			token := p.tokens[node.token]
-			fmt.print(p.source[token.start:token.end])
+			strings.write_string(builder, p.source[token.start:token.end])
 		case .Identifier:
 			token := p.tokens[node.token]
-			fmt.print(p.source[token.start:token.end])
+			strings.write_string(builder, p.source[token.start:token.end])
 		case .Integer:
 			token := p.tokens[node.token]
-			fmt.print(p.source[token.start:token.end])
+			strings.write_string(builder, p.source[token.start:token.end])
 		case .Variable:
-			var_data := p.data[node.data].var_stmt
+			var_stmt := decode_data(p, node.data, VarStmt)
 			token := p.tokens[node.token]
 			if indent > 0 {
-				print_indent(indent)
+				print_indent(builder, indent)
 			}
-			fmt.print(p.source[token.start:token.end])
-			fmt.print(" := ")
-			print_node(p, var_data.value)
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(builder, " := ")
+			print_node(p, builder, var_stmt.value)
 			if indent > 0 {
-				fmt.println(";")
+				strings.write_string(builder, ";\n")
 			}
 		case .Block:
-			fmt.println(" {")
-			block_data := p.data[node.data].block_statement
-			for stmt in block_data.statements {
-				print_node(p, stmt, next_indent)
+			strings.write_string(builder, " {\n")
+			block_stmt := decode_data(p, node.data, BlockStmt)
+			for stmt in block_stmt.statements {
+				print_node(p, builder, stmt, next_indent)
 			}
-			print_indent(indent)
-			fmt.println("}")
+			print_indent(builder, indent)
+			strings.write_string(builder, "}\n")
 		case .Parameter:
-			param_data := p.data[node.data].param_stmt
+			param_stmt := decode_data(p, node.data, ParamStmt)
 			token := p.tokens[node.token]
-			fmt.print(p.source[token.start:token.end])
-			fmt.print(": ")
-			print_node(p, param_data.type)
+			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(builder, ": ")
+			print_node(p, builder, param_stmt.type)
 		case .Procedure:
-			proc_data := p.data[node.data].proc_stmt
-			print_indent(indent)
-			fmt.print("def ")
-			id_token := p.tokens[proc_data.identifier]
-			fmt.print(p.source[id_token.start:id_token.end])
-			fmt.print("(")
-			for param, i in proc_data.parameters {
-				if i > 0 do fmt.print(", ")
-				print_node(p, param)
+			proc_stmt := decode_data(p, node.data, ProcStmt)
+			print_indent(builder, indent)
+			strings.write_string(builder, "def ")
+			id_token := p.tokens[proc_stmt.identifier]
+			strings.write_string(builder, p.source[id_token.start:id_token.end])
+			strings.write_byte(builder, '(')
+			for param, i in proc_stmt.parameters {
+				if i > 0 do strings.write_string(builder, ", ")
+				print_node(p, builder, param)
 			}
-			fmt.print(") -> ")
-			print_node(p, proc_data.return_type)
-			print_node(p, proc_data.body, indent)
+			strings.write_string(builder, ") -> ")
+			print_node(p, builder, proc_stmt.return_type)
+			print_node(p, builder, proc_stmt.body, indent)
 		case .For:
-			for_data := p.data[node.data].for_stmt
-			print_indent(indent)
-			fmt.print("for ")
-			print_node(p, for_data.initial)
-			fmt.print("; ")
-			print_node(p, for_data.condition)
-			fmt.print("; ")
-			print_node(p, for_data.update)
-			print_node(p, for_data.body, indent)
+			for_stmt := decode_data(p, node.data, ForStmt)
+			print_indent(builder, indent)
+			strings.write_string(builder, "for ")
+			print_node(p, builder, for_stmt.initial)
+			strings.write_string(builder, "; ")
+			print_node(p, builder, for_stmt.condition)
+			strings.write_string(builder, "; ")
+			print_node(p, builder, for_stmt.update)
+			print_node(p, builder, for_stmt.body, indent)
 		case .Return:
-			return_data := p.data[node.data].return_stmt
-			print_indent(indent)
-			fmt.print("return ")
-			print_node(p, return_data.value)
-			fmt.println(";")
+			return_stmt := decode_data(p, node.data, ReturnStmt)
+			print_indent(builder, indent)
+			strings.write_string(builder, "return ")
+			print_node(p, builder, return_stmt.value)
+			strings.write_string(builder, ";\n")
 		case .ExprStmt:
-			expr_data := p.data[node.data].expr_stmt
-			print_indent(indent)
-			print_node(p, expr_data.expression)
-			fmt.println(";")
+			expr_stmt := decode_data(p, node.data, ExprStmt)
+			print_indent(builder, indent)
+			print_node(p, builder, expr_stmt.expression)
+			strings.write_string(builder, ";\n")
 		case .Call:
-			call_data := p.data[node.data].call_expr
-			print_node(p, call_data.callee)
-			fmt.print("(")
-			for arg, i in call_data.arguments {
-				if i > 0 do fmt.print(", ")
-				print_node(p, arg)
+			call_expr := decode_data(p, node.data, CallExpr)
+			print_node(p, builder, call_expr.callee)
+			strings.write_byte(builder, '(')
+			for arg, i in call_expr.arguments {
+				if i > 0 do strings.write_string(builder, ", ")
+				print_node(p, builder, arg)
 			}
-			fmt.print(")")
+			strings.write_byte(builder, ')')
 		case .Assignment:
-			assign_data := p.data[node.data].assign_expr
-			print_node(p, assign_data.left)
-			fmt.print(" = ")
-			print_node(p, assign_data.right)
+			assign_expr := decode_data(p, node.data, AssignExpr)
+			print_node(p, builder, assign_expr.left, indent, node_prec + 1)
+			strings.write_string(builder, " = ")
+			print_node(p, builder, assign_expr.right, indent, node_prec)
 		case .Addition:
-			add_data := p.data[node.data].add_expr
-			print_node(p, add_data.left)
-			fmt.print(" + ")
-			print_node(p, add_data.right)
+			add_expr := decode_data(p, node.data, AddExpr)
+			print_node(p, builder, add_expr.left, indent, node_prec)
+			strings.write_string(builder, " + ")
+			print_node(p, builder, add_expr.right, indent, node_prec + 1)
 		case .Multiplication:
-			mul_data := p.data[node.data].mul_expr
-			print_node(p, mul_data.left)
-			fmt.print(" * ")
-			print_node(p, mul_data.right)
+			mul_expr := decode_data(p, node.data, MulExpr)
+			print_node(p, builder, mul_expr.left, indent, node_prec)
+			strings.write_string(builder, " * ")
+			print_node(p, builder, mul_expr.right, indent, node_prec + 1)
 		case .Less:
-			less_data := p.data[node.data].less_expr
-			print_node(p, less_data.left)
-			fmt.print(" < ")
-			print_node(p, less_data.right)
+			less_expr := decode_data(p, node.data, LessExpr)
+			print_node(p, builder, less_expr.left, indent, node_prec)
+			strings.write_string(builder, " < ")
+			print_node(p, builder, less_expr.right, indent, node_prec + 1)
+		}
+
+		if needs_parens {
+			strings.write_byte(builder, ')')
 		}
 	}
 
-	print_node(p, NodeIndex(len(p.nodes) - 1))
+	print_node(p, &builder, NodeIndex(len(p.nodes) - 1))
+	return strings.to_string(builder)
 }
 
 parse_atom :: proc(p: ^Parser) -> NodeIndex {
@@ -365,12 +520,17 @@ parse_atom :: proc(p: ^Parser) -> NodeIndex {
 		expect(p, .Number)
 		return add_node(p, Node{.Integer, INVALID_DATA, token})
 	case .True, .False:
-		panic("todo")
+		add_error(p, "boolean literals not implemented", p.cursor)
+		return INVALID_NODE
 	case .LeftParen:
-		panic("todo")
-	case:
-		panic(fmt.tprintf("unexpected token: %v", peek(p)))
+		next(p)
+		expr := parse_expr(p)
+		expect(p, .RightParen)
+		return expr
 	}
+
+	add_error(p, fmt.tprintf("unexpected token: %v", peek(p)), p.cursor)
+	return INVALID_NODE
 }
 
 postfix_prec :: proc(kind: lexer.TokenKind) -> int {
@@ -433,12 +593,11 @@ parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
 				}
 				expect(p, .RightParen)
 			}
-			data := NodeData{}
-			data.call_expr.callee = left
-			data.call_expr.arguments = args[:]
-			left = add_node(p, Node{.Call, add_data(p, data), token})
+			call_expr := CallExpr{left, args[:]}
+			data := encode_data(p, call_expr)
+			left = add_node(p, Node{.Call, data, token})
 		case:
-			panic("unreachable")
+			add_error(p, fmt.tprintf("unexpected postfix operator: %v", peek(p)), p.cursor)
 		}
 	}
 
@@ -460,30 +619,26 @@ parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
 
 		#partial switch op_kind {
 		case .Equal:
-			data := NodeData{}
-			data.assign_expr.left = left
-			data.assign_expr.right = right
-			left = add_node(p, Node{.Assignment, add_data(p, data), token})
+			assign_expr := AssignExpr{left, right}
+			data := encode_data(p, assign_expr)
+			left = add_node(p, Node{.Assignment, data, token})
 		case .Plus:
-			data := NodeData{}
-			data.add_expr.left = left
-			data.add_expr.right = right
-			left = add_node(p, Node{.Addition, add_data(p, data), token})
+			add_expr := AddExpr{left, right}
+			data := encode_data(p, add_expr)
+			left = add_node(p, Node{.Addition, data, token})
 		case .Asterisk:
-			data := NodeData{}
-			data.mul_expr.left = left
-			data.mul_expr.right = right
-			left = add_node(p, Node{.Multiplication, add_data(p, data), token})
+			mul_expr := MulExpr{left, right}
+			data := encode_data(p, mul_expr)
+			left = add_node(p, Node{.Multiplication, data, token})
 		case .Less:
-			data := NodeData{}
-			data.less_expr.left = left
-			data.less_expr.right = right
-			left = add_node(p, Node{.Less, add_data(p, data), token})
+			less_expr := LessExpr{left, right}
+			data := encode_data(p, less_expr)
+			left = add_node(p, Node{.Less, data, token})
 		case:
 			for node in p.nodes {
 				fmt.println("NODE: %v", node)
 			}
-			panic(fmt.tprintf("unexpected binary operator: %v", op_kind))
+			add_error(p, fmt.tprintf("unexpected binary operator: %v", op_kind), p.cursor)
 		}
 	}
 
@@ -497,7 +652,8 @@ parse_type :: proc(p: ^Parser) -> NodeIndex {
 		next(p)
 		return add_node(p, Node{.Primitive, INVALID_DATA, token})
 	case:
-		panic(fmt.tprintf("unexpected type token: %v", peek(p)))
+		add_error(p, fmt.tprintf("unexpected type token: %v", peek(p)), p.cursor)
+		return INVALID_NODE
 	}
 }
 
@@ -507,11 +663,10 @@ parse_param :: proc(p: ^Parser) -> NodeIndex {
 	expect(p, .Colon)
 	type := parse_type(p)
 
-	data := NodeData{}
-	data.param_stmt.type = type
-	data.param_stmt.value = INVALID_NODE
+	param_stmt := ParamStmt{type, INVALID_NODE}
+	data := encode_data(p, param_stmt)
 
-	return add_node(p, Node{.Parameter, add_data(p, data), token})
+	return add_node(p, Node{.Parameter, data, token})
 }
 
 parse_stmt :: proc(p: ^Parser) -> NodeIndex {
@@ -520,25 +675,25 @@ parse_stmt :: proc(p: ^Parser) -> NodeIndex {
 	#partial switch peek(p) {
 	case .Identifier:
 		#partial switch peek_next(p) {
-		case .Var:
-			expect(p, .Identifier)
-			expect(p, .Var)
+		case .ColonEqual:
+			token := p.cursor
+			next(p)
+			next(p)
 			value := parse_expr(p)
 			expect(p, .Semicolon)
 
-			data := NodeData{}
-			data.var_stmt.type = INVALID_NODE
-			data.var_stmt.value = value
+			var_stmt := VarStmt{INVALID_NODE, value}
+			data := encode_data(p, var_stmt)
 
-			return add_node(p, Node{.Variable, add_data(p, data), token})
+			return add_node(p, Node{.Variable, data, token})
 		case:
 			expression := parse_expr(p)
 			expect(p, .Semicolon)
 
-			data := NodeData{}
-			data.expr_stmt.expression = expression
+			expr_stmt := ExprStmt{expression}
+			data := encode_data(p, expr_stmt)
 
-			return add_node(p, Node{.ExprStmt, add_data(p, data), token})
+			return add_node(p, Node{.ExprStmt, data, token})
 		}
 	case .Def:
 		next(p)
@@ -562,13 +717,10 @@ parse_stmt :: proc(p: ^Parser) -> NodeIndex {
 
 		body := parse_stmt(p)
 
-		data := NodeData{}
-		data.proc_stmt.identifier = identifier
-		data.proc_stmt.return_type = return_type
-		data.proc_stmt.body = body
-		data.proc_stmt.parameters = parameters[:]
+		proc_stmt := ProcStmt{identifier, return_type, body, parameters[:]}
+		data := encode_data(p, proc_stmt)
 
-		return add_node(p, Node{.Procedure, add_data(p, data), token})
+		return add_node(p, Node{.Procedure, data, token})
 	case .For:
 		next(p)
 		initial := parse_stmt(p)
@@ -577,22 +729,19 @@ parse_stmt :: proc(p: ^Parser) -> NodeIndex {
 		update := parse_expr(p)
 		body := parse_stmt(p)
 
-		data := NodeData{}
-		data.for_stmt.initial = initial
-		data.for_stmt.condition = condition
-		data.for_stmt.update = update
-		data.for_stmt.body = body
+		for_stmt := ForStmt{initial, condition, update, body}
+		data := encode_data(p, for_stmt)
 
-		return add_node(p, Node{.For, add_data(p, data), token})
+		return add_node(p, Node{.For, data, token})
 	case .Return:
 		next(p)
 		value := parse_expr(p)
 		expect(p, .Semicolon)
 
-		data := NodeData{}
-		data.return_stmt.value = value
+		return_stmt := ReturnStmt{value}
+		data := encode_data(p, return_stmt)
 
-		return add_node(p, Node{.Return, add_data(p, data), token})
+		return add_node(p, Node{.Return, data, token})
 	case .LeftBrace:
 		next(p)
 		stmts := make([dynamic]NodeIndex)
@@ -601,18 +750,18 @@ parse_stmt :: proc(p: ^Parser) -> NodeIndex {
 		}
 		expect(p, .RightBrace)
 
-		data := NodeData{}
-		data.block_statement.statements = stmts[:]
+		block_stmt := BlockStmt{stmts[:]}
+		data := encode_data(p, block_stmt)
 
-		return add_node(p, Node{.Block, add_data(p, data), token})
+		return add_node(p, Node{.Block, data, token})
 	case:
 		expression := parse_expr(p)
 		expect(p, .Semicolon)
 
-		data := NodeData{}
-		data.expr_stmt.expression = expression
+		expr_stmt := ExprStmt{expression}
+		data := encode_data(p, expr_stmt)
 
-		return add_node(p, Node{.ExprStmt, add_data(p, data), token})
+		return add_node(p, Node{.ExprStmt, data, token})
 	}
 
 	return INVALID_NODE
@@ -621,7 +770,7 @@ parse_stmt :: proc(p: ^Parser) -> NodeIndex {
 parse :: proc(p: ^Parser) -> [dynamic]Node {
 	stmts := make([dynamic]NodeIndex)
 
-	for peek(p) != .Eof {
+	for peek(p) != .Eof && len(p.errors) < MAX_PARSER_ERRORS {
 		append(&stmts, parse_stmt(p))
 	}
 
