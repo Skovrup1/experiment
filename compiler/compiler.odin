@@ -2,6 +2,8 @@ package compiler
 
 import "lexer"
 import "parser"
+import "sema"
+import "tac"
 
 import "core:fmt"
 import "core:os"
@@ -18,7 +20,7 @@ main :: proc() {
 	defer free_all(context.temp_allocator)
 	defer vmem.arena_destroy(&arena)
 
-	handle, open_err := os.open("examples/test.lang")
+	handle, open_err := os.open("examples/return.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)
@@ -61,9 +63,43 @@ main :: proc() {
 
 	fmt.println(parser.ast_to_string(&p))
 
-	fmt.println(size_of(parser.Node))
-	fmt.println(len(p.nodes))
+	a := sema.make_analyzer(source, tokens[:], ast[:], p.data[:])
+	sema.analyze(&a)
 
-	fmt.println(size_of(parser.Node) * len(p.nodes))
-	fmt.println(size_of(u32) * len(p.data))
+	if len(a.errors) > 0 {
+		for err, i in a.errors {
+			fmt.println(i, err)
+		}
+		fmt.println()
+	} else {
+		for str, i in a.strings {
+			fmt.println(i, str)
+		}
+
+		for symbol, i in a.symbols {
+			fmt.println(i, symbol)
+		}
+
+		for type, i in a.types {
+			fmt.println(i, type)
+		}
+
+		for type, i in a.node_types {
+			if type != 0 {
+				fmt.println(i, type)
+			}
+		}
+
+		fmt.println()
+	}
+
+	fmt.println("size_of(Node) =", size_of(parser.Node))
+	fmt.println("total nodes =", len(p.nodes))
+
+	fmt.println("space taken by nodes =", size_of(parser.Node) * len(p.nodes))
+	fmt.println("space taken by node data =", size_of(u32) * len(p.data))
+	fmt.println(
+		"space taken by AST =",
+		size_of(parser.Node) * len(p.nodes) + size_of(u32) * len(p.data),
+	)
 }

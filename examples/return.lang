@@ -1,5 +1,5 @@
 def fac(n: S32) -> S32 {
-    acc := 1;
+    acc: S32 = n;
 
     return acc;
 }

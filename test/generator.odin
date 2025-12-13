@@ -14,7 +14,7 @@ gen_identifier :: proc() -> string {
 }
 
 gen_type_name :: proc() -> string {
-	types := []string{"S32", "S64", "U32", "U64"}
+	types := []string{"U32", "S32", "U32"}
 	idx := rand.int31_max(i32(len(types)))
 	return types[idx]
 }
@@ -67,7 +67,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 			if min_prec <= 1 {
 				right := gen_expr(p, tokens, depth + 1, 1)
 				assign_expr := parser.AssignExpr{left, right}
-				data := parser.encode_data(p, assign_expr)
+				data := parser.encode_data(&p.data, assign_expr)
 				token := add_synthetic_token(p, tokens, "=", .Equal)
 				return parser.add_node(p, parser.Node{.Assignment, data, token})
 			}
@@ -75,7 +75,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 			if min_prec <= 2 {
 				right := gen_expr(p, tokens, depth + 1, 3)  // Right side has higher precedence
 				less_expr := parser.LessExpr{left, right}
-				data := parser.encode_data(p, less_expr)
+				data := parser.encode_data(&p.data, less_expr)
 				token := add_synthetic_token(p, tokens, "<", .Less)
 				return parser.add_node(p, parser.Node{.Less, data, token})
 			}
@@ -83,7 +83,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 			if min_prec <= 3 {
 				right := gen_expr(p, tokens, depth + 1, 3)
 				add_expr := parser.AddExpr{left, right}
-				data := parser.encode_data(p, add_expr)
+				data := parser.encode_data(&p.data, add_expr)
 				token := add_synthetic_token(p, tokens, "+", .Plus)
 				return parser.add_node(p, parser.Node{.Addition, data, token})
 			}
@@ -94,7 +94,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 				next_prec := (depth < 2 && rand.int31_max(3) == 0) ? 0 : 4
 				right := gen_expr(p, tokens, depth + 1, next_prec)
 				mul_expr := parser.MulExpr{left, right}
-				data := parser.encode_data(p, mul_expr)
+				data := parser.encode_data(&p.data, mul_expr)
 				token := add_synthetic_token(p, tokens, "*", .Asterisk)
 				return parser.add_node(p, parser.Node{.Multiplication, data, token})
 			}
@@ -108,7 +108,7 @@ gen_stmt :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 	if depth > 2 {
 		value := gen_expr(p, tokens, 0)
 		return_stmt := parser.ReturnStmt{value}
-		data := parser.encode_data(p, return_stmt)
+		data := parser.encode_data(&p.data, return_stmt)
 		token := add_synthetic_token(p, tokens, "return", .Return)
 		return parser.add_node(p, parser.Node{.Return, data, token})
 	}
@@ -119,8 +119,8 @@ gen_stmt :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 		name := gen_identifier()
 		token := add_synthetic_token(p, tokens, name, .Identifier)
 		value := gen_expr(p, tokens, 0)
-		var_stmt := parser.VarStmt{parser.INVALID_NODE, value}
-		data := parser.encode_data(p, var_stmt)
+		var_stmt := parser.VarDecl{parser.INVALID_NODE, value}
+		data := parser.encode_data(&p.data, var_stmt)
 		return parser.add_node(p, parser.Node{.Variable, data, token})
 	
 	case 1: // for statement
@@ -128,8 +128,8 @@ gen_stmt :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 		init_name := gen_identifier()
 		init_token := add_synthetic_token(p, tokens, init_name, .Identifier)
 		init_value := gen_expr(p, tokens, 0)
-		init_stmt := parser.VarStmt{parser.INVALID_NODE, init_value}
-		init_data := parser.encode_data(p, init_stmt)
+		init_stmt := parser.VarDecl{parser.INVALID_NODE, init_value}
+		init_data := parser.encode_data(&p.data, init_stmt)
 		initial := parser.add_node(p, parser.Node{.Variable, init_data, init_token})
 		
 		// Generate condition: i < n
@@ -145,27 +145,27 @@ gen_stmt :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 			append(&body_stmts, gen_stmt(p, tokens, depth + 1))
 		}
 		body_block := parser.BlockStmt{body_stmts[:]}
-		body_data := parser.encode_data(p, body_block)
+		body_data := parser.encode_data(&p.data, body_block)
 		body_token := add_synthetic_token(p, tokens, "{", .LeftBrace)
 		body := parser.add_node(p, parser.Node{.Block, body_data, body_token})
 		
 		// Create for statement
 		for_stmt := parser.ForStmt{initial, condition, update, body}
-		data := parser.encode_data(p, for_stmt)
+		data := parser.encode_data(&p.data, for_stmt)
 		token := add_synthetic_token(p, tokens, "for", .For)
 		return parser.add_node(p, parser.Node{.For, data, token})
 	
 	case 2: // block statement, don't generate nested blocks for now
 		value := gen_expr(p, tokens, 0)
 		return_stmt := parser.ReturnStmt{value}
-		data := parser.encode_data(p, return_stmt)
+		data := parser.encode_data(&p.data, return_stmt)
 		token := add_synthetic_token(p, tokens, "return", .Return)
 		return parser.add_node(p, parser.Node{.Return, data, token})
 	
 	case: // return statement
 		value := gen_expr(p, tokens, 0)
 		return_stmt := parser.ReturnStmt{value}
-		data := parser.encode_data(p, return_stmt)
+		data := parser.encode_data(&p.data, return_stmt)
 		token := add_synthetic_token(p, tokens, "return", .Return)
 		return parser.add_node(p, parser.Node{.Return, data, token})
 	}
@@ -179,8 +179,8 @@ gen_parameter :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token) -> parse
 	type_token := add_synthetic_token(p, tokens, type_name, .Identifier)
 	type_node := parser.add_node(p, parser.Node{.Primitive, parser.INVALID_DATA, type_token})
 	
-	param_stmt := parser.ParamStmt{type_node, parser.INVALID_NODE}
-	data := parser.encode_data(p, param_stmt)
+	param_stmt := parser.ParamDecl{type_node, parser.INVALID_NODE}
+	data := parser.encode_data(&p.data, param_stmt)
 	
 	return parser.add_node(p, parser.Node{.Parameter, data, param_token})
 }
@@ -207,12 +207,12 @@ gen_procedure :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token) -> parse
 	}
 	
 	block_stmt := parser.BlockStmt{stmts[:]}
-	block_data := parser.encode_data(p, block_stmt)
+	block_data := parser.encode_data(&p.data, block_stmt)
 	body_token := add_synthetic_token(p, tokens, "{", .LeftBrace)
 	body := parser.add_node(p, parser.Node{.Block, block_data, body_token})
 	
-	proc_stmt := parser.ProcStmt{id_token, ret_type, body, params[:]}
-	proc_data := parser.encode_data(p, proc_stmt)
+	proc_stmt := parser.ProcDecl{id_token, ret_type, body, params[:]}
+	proc_data := parser.encode_data(&p.data, proc_stmt)
 	
 	return parser.add_node(p, parser.Node{.Procedure, proc_data, token})
 }

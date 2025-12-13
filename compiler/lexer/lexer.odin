@@ -15,6 +15,7 @@ TokenKind :: enum u8 {
 	Percent, // %
 	Equal, // =
 	ColonEqual, // :=
+	ColonColon, // ::
 	DoubleEqual, // ==
 	NotEqual, // !=
 	Less, // <
@@ -239,6 +240,9 @@ scan_token :: proc(s: ^Scanner) {
 		if peek(s) == '=' {
 			advance(s)
 			add_token(s, .ColonEqual)
+		} else if peek(s) == ':' {
+			advance(s)
+			add_token(s, .ColonColon)
 		} else {
 			add_token(s, .Colon)
 		}
@@ -260,5 +264,6 @@ scan_tokens :: proc(s: ^Scanner) -> [dynamic]Token {
 	for !is_at_end(s) {
 		scan_token(s)
 	}
+
 	return s.tokens
 }

@@ -34,28 +34,28 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return true
 	
 	case .Addition:
-		d1 := parser.decode_data(p1, node1.data, parser.AddExpr)
-		d2 := parser.decode_data(p2, node2.data, parser.AddExpr)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.AddExpr)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.AddExpr)
 		return compare_nodes(p1, d1.left, p2, d2.left) && compare_nodes(p1, d1.right, p2, d2.right)
 	
 	case .Multiplication:
-		d1 := parser.decode_data(p1, node1.data, parser.MulExpr)
-		d2 := parser.decode_data(p2, node2.data, parser.MulExpr)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.MulExpr)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.MulExpr)
 		return compare_nodes(p1, d1.left, p2, d2.left) && compare_nodes(p1, d1.right, p2, d2.right)
 	
 	case .Less:
-		d1 := parser.decode_data(p1, node1.data, parser.LessExpr)
-		d2 := parser.decode_data(p2, node2.data, parser.LessExpr)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.LessExpr)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.LessExpr)
 		return compare_nodes(p1, d1.left, p2, d2.left) && compare_nodes(p1, d1.right, p2, d2.right)
 	
 	case .Assignment:
-		d1 := parser.decode_data(p1, node1.data, parser.AssignExpr)
-		d2 := parser.decode_data(p2, node2.data, parser.AssignExpr)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.AssignExpr)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.AssignExpr)
 		return compare_nodes(p1, d1.left, p2, d2.left) && compare_nodes(p1, d1.right, p2, d2.right)
 	
 	case .Variable:
-		d1 := parser.decode_data(p1, node1.data, parser.VarStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.VarStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.VarDecl)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.VarDecl)
 		t1 := p1.tokens[node1.token]
 		t2 := p2.tokens[node2.token]
 		s1 := p1.source[t1.start:t1.end]
@@ -67,18 +67,18 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return compare_nodes(p1, d1.value, p2, d2.value)
 	
 	case .Return:
-		d1 := parser.decode_data(p1, node1.data, parser.ReturnStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.ReturnStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.ReturnStmt)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.ReturnStmt)
 		return compare_nodes(p1, d1.value, p2, d2.value)
 	
 	case .ExprStmt:
-		d1 := parser.decode_data(p1, node1.data, parser.ExprStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.ExprStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.ExprStmt)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.ExprStmt)
 		return compare_nodes(p1, d1.expression, p2, d2.expression)
 	
 	case .Block:
-		d1 := parser.decode_data(p1, node1.data, parser.BlockStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.BlockStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.BlockStmt)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.BlockStmt)
 		if len(d1.statements) != len(d2.statements) {
 			fmt.printf("Block statement count mismatch: %d vs %d\n", len(d1.statements), len(d2.statements))
 			return false
@@ -92,11 +92,11 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return true
 	
 	case .Procedure:
-		d1 := parser.decode_data(p1, node1.data, parser.ProcStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.ProcStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.ProcDecl)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.ProcDecl)
 		
-		t1 := p1.tokens[d1.identifier]
-		t2 := p2.tokens[d2.identifier]
+		t1 := p1.tokens[d1.name]
+		t2 := p2.tokens[d2.name]
 		s1 := p1.source[t1.start:t1.end]
 		s2 := p2.source[t2.start:t2.end]
 		if s1 != s2 {
@@ -129,8 +129,8 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return true
 	
 	case .Parameter:
-		d1 := parser.decode_data(p1, node1.data, parser.ParamStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.ParamStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.ParamDecl)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.ParamDecl)
 		t1 := p1.tokens[node1.token]
 		t2 := p2.tokens[node2.token]
 		s1 := p1.source[t1.start:t1.end]
@@ -142,8 +142,8 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return compare_nodes(p1, d1.type, p2, d2.type)
 	
 	case .For:
-		d1 := parser.decode_data(p1, node1.data, parser.ForStmt)
-		d2 := parser.decode_data(p2, node2.data, parser.ForStmt)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.ForStmt)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.ForStmt)
 		if !compare_nodes(p1, d1.initial, p2, d2.initial) {
 			fmt.println("For initial mismatch")
 			return false
@@ -163,8 +163,8 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 		return true
 	
 	case .Call:
-		d1 := parser.decode_data(p1, node1.data, parser.CallExpr)
-		d2 := parser.decode_data(p2, node2.data, parser.CallExpr)
+        d1 := parser.decode_data(p1.data[:], node1.data, parser.CallExpr)
+		d2 := parser.decode_data(p2.data[:], node2.data, parser.CallExpr)
 		if !compare_nodes(p1, d1.callee, p2, d2.callee) {
 			fmt.println("Call callee mismatch")
 			return false
