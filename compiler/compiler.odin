@@ -3,7 +3,8 @@ package compiler
 import "lexer"
 import "parser"
 import "sema"
-import "tac"
+import "hir"
+//import "tac"
 
 import "core:fmt"
 import "core:os"
@@ -20,7 +21,7 @@ main :: proc() {
 	defer free_all(context.temp_allocator)
 	defer vmem.arena_destroy(&arena)
 
-	handle, open_err := os.open("examples/return.lang")
+	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)

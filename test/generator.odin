@@ -37,7 +37,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 		if rand.int31_max(2) == 0 {
 			val := gen_integer()
 			str := fmt.tprintf("%d", val)
-			token := add_synthetic_token(p, tokens, str, .Number)
+			token := add_synthetic_token(p, tokens, str, .Integer)
 			return parser.add_node(p, parser.Node{.Integer, parser.INVALID_DATA, token})
 		} else {
 			name := gen_identifier()
@@ -50,7 +50,7 @@ gen_expr :: proc(p: ^parser.Parser, tokens: ^[dynamic]lexer.Token, depth: int = 
 	if rand.int31_max(2) == 0 {
 		val := gen_integer()
 		str := fmt.tprintf("%d", val)
-		token := add_synthetic_token(p, tokens, str, .Number)
+		token := add_synthetic_token(p, tokens, str, .Integer)
 		left = parser.add_node(p, parser.Node{.Integer, parser.INVALID_DATA, token})
 	} else {
 		name := gen_identifier()

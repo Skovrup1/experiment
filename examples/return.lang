@@ -1,5 +1,5 @@
-def fac(n: S32) -> S32 {
-    acc: S32 = n;
+fac :: (n: F32) -> F32 {
+    acc := n;
 
-    return acc;
+    return acc + acc;
 }

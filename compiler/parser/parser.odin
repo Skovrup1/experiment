@@ -9,13 +9,16 @@ import "core:strings"
 
 NodeKind :: enum u8 {
 	Invalid = 0,
-	Primitive,
 	Identifier,
+	True,
+	False,
 	Integer,
+	Float,
 	Block,
 	Variable,
 	Parameter,
 	Procedure,
+	If,
 	For,
 	Return,
 	ExprStmt,
@@ -23,11 +26,16 @@ NodeKind :: enum u8 {
 	Assignment,
 	Addition,
 	Multiplication,
+	Equal,
 	Less,
 }
 
 IntLit :: struct {
-	integer: i64,
+	value: i64,
+}
+
+FloatLit :: struct {
+	value: f64,
 }
 
 VarDecl :: struct {
@@ -49,6 +57,12 @@ ProcDecl :: struct {
 ParamDecl :: struct {
 	type:  NodeIndex,
 	value: NodeIndex,
+}
+
+IfExpr :: struct {
+	condition: NodeIndex,
+	then_body: NodeIndex,
+	else_body: NodeIndex,
 }
 
 ForStmt :: struct {
@@ -82,6 +96,11 @@ MulExpr :: struct {
 }
 
 AddExpr :: struct {
+	left:  NodeIndex,
+	right: NodeIndex,
+}
+
+EqualExpr :: struct {
 	left:  NodeIndex,
 	right: NodeIndex,
 }
@@ -190,6 +209,322 @@ add_error :: proc(p: ^Parser, message: string, position: lexer.TokenIndex) {
 	append(&p.errors, error)
 }
 
+parse_atom :: proc(p: ^Parser) -> NodeIndex {
+	#partial switch peek(p) {
+	case .Identifier:
+		token := p.cursor
+		expect(p, .Identifier)
+		return add_node(p, Node{.Identifier, INVALID_DATA, token})
+	case .True:
+		token := p.cursor
+		expect(p, .True)
+		return add_node(p, Node{.True, INVALID_DATA, token})
+	case .False:
+		token := p.cursor
+		expect(p, .False)
+		return add_node(p, Node{.False, INVALID_DATA, token})
+	case .Integer:
+		token := p.cursor
+		expect(p, .Integer)
+		return add_node(p, Node{.Integer, INVALID_DATA, token})
+	case .Float:
+		token := p.cursor
+		expect(p, .Float)
+		return add_node(p, Node{.Float, INVALID_DATA, token})
+	case .LeftParen:
+		next(p)
+		expr := parse_expr(p)
+		expect(p, .RightParen)
+		return expr
+	}
+
+	add_error(p, fmt.tprintf("unexpected token: %v", peek(p)), p.cursor)
+	return INVALID_NODE
+}
+
+postfix_prec :: proc(kind: lexer.TokenKind) -> int {
+	#partial switch kind {
+	case .LeftParen:
+		return 7
+	case:
+		return 0
+	}
+}
+
+is_binary_op :: proc(kind: lexer.TokenKind) -> bool {
+	#partial switch kind {
+	case .Equal, .Plus, .Asterisk, .EqualEqual, .Less:
+		return true
+	case:
+		return false
+	}
+}
+
+infix_prec :: proc(kind: lexer.TokenKind) -> int {
+	#partial switch kind {
+	case .Equal:
+		return 1
+	case .EqualEqual, .Less:
+		return 2
+	case .Plus:
+		return 3
+	case .Asterisk:
+		return 4
+	case:
+		return 0
+	}
+}
+
+is_right_associative :: proc(kind: lexer.TokenKind) -> bool {
+	#partial switch kind {
+	case .Equal:
+		return true
+	case:
+		return false
+	}
+}
+
+parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
+	left := parse_atom(p)
+
+	for postfix_prec(peek(p)) > min_prec {
+		#partial switch peek(p) {
+		case .LeftParen:
+			token := p.cursor
+			next(p)
+			args := make([dynamic]NodeIndex)
+			if !allow(p, .RightParen) {
+				append(&args, parse_expr(p))
+				for allow(p, .Comma) {
+					append(&args, parse_expr(p))
+				}
+				expect(p, .RightParen)
+			}
+			call_expr := CallExpr{left, args[:]}
+			data := encode_data(&p.data, call_expr)
+			left = add_node(p, Node{.Call, data, token})
+		case:
+			add_error(p, fmt.tprintf("unexpected postfix operator: %v", peek(p)), p.cursor)
+		}
+	}
+
+	// is this is_binary_op call necessary?
+	for is_binary_op(peek(p)) && infix_prec(peek(p)) >= min_prec {
+		token := p.cursor
+		op_kind := peek(p)
+		prec := infix_prec(op_kind)
+
+		next_min_prec: int
+		if is_right_associative(op_kind) {
+			next_min_prec = prec
+		} else {
+			next_min_prec = prec + 1
+		}
+
+		next(p)
+		right := parse_expr(p, next_min_prec)
+
+		#partial switch op_kind {
+		case .Equal:
+			assign_expr := AssignExpr{left, right}
+			data := encode_data(&p.data, assign_expr)
+			left = add_node(p, Node{.Assignment, data, token})
+		case .Plus:
+			add_expr := AddExpr{left, right}
+			data := encode_data(&p.data, add_expr)
+			left = add_node(p, Node{.Addition, data, token})
+		case .Asterisk:
+			mul_expr := MulExpr{left, right}
+			data := encode_data(&p.data, mul_expr)
+			left = add_node(p, Node{.Multiplication, data, token})
+		case .EqualEqual:
+			equal_expr := EqualExpr{left, right}
+			data := encode_data(&p.data, equal_expr)
+			left = add_node(p, Node{.Equal, data, token})
+		case .Less:
+			less_expr := LessExpr{left, right}
+			data := encode_data(&p.data, less_expr)
+			left = add_node(p, Node{.Less, data, token})
+		case:
+			for node in p.nodes {
+				fmt.println("NODE: %v", node)
+			}
+			add_error(p, fmt.tprintf("unexpected binary operator: %v", op_kind), p.cursor)
+		}
+	}
+
+	return left
+}
+
+parse_type :: proc(p: ^Parser) -> NodeIndex {
+	#partial switch peek(p) {
+	case .Identifier:
+		token := p.cursor
+		next(p)
+		return add_node(p, Node{.Identifier, INVALID_DATA, token})
+	case:
+		add_error(p, fmt.tprintf("unexpected type token: %v", peek(p)), p.cursor)
+		return INVALID_NODE
+	}
+}
+
+parse_param :: proc(p: ^Parser) -> NodeIndex {
+	token := p.cursor
+	expect(p, .Identifier)
+	expect(p, .Colon)
+	type := parse_type(p)
+
+	param_stmt := ParamDecl{type, INVALID_NODE}
+	data := encode_data(&p.data, param_stmt)
+
+	return add_node(p, Node{.Parameter, data, token})
+}
+
+parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
+	token := p.cursor
+
+	#partial switch peek(p) {
+	case .Identifier:
+		#partial switch peek_next(p) {
+		case .Colon:
+			next(p)
+			next(p)
+			type := parse_type(p)
+			expect(p, .Equal)
+			value := parse_expr(p)
+			expect(p, .Semicolon)
+
+			var_stmt := VarDecl{INVALID_NODE, value}
+			data := encode_data(&p.data, var_stmt)
+
+			return add_node(p, Node{.Variable, data, token})
+		case .ColonEqual:
+			next(p)
+			next(p)
+			value := parse_expr(p)
+			expect(p, .Semicolon)
+
+			var_stmt := VarDecl{INVALID_NODE, value}
+			data := encode_data(&p.data, var_stmt)
+
+			return add_node(p, Node{.Variable, data, token})
+		case .ColonColon:
+			next(p)
+			next(p)
+
+			if peek(p) == .LeftParen {
+				next(p)
+
+				parameters := make([dynamic]NodeIndex)
+				if peek(p) != .RightParen {
+					append(&parameters, parse_param(p))
+					for allow(p, .Comma) {
+						append(&parameters, parse_param(p))
+					}
+				}
+
+				expect(p, .RightParen)
+				expect(p, .Arrow)
+
+				return_type := parse_type(p)
+
+				body := parse_toplevel(p)
+
+				proc_stmt := ProcDecl{token, return_type, body, parameters[:]}
+				data := encode_data(&p.data, proc_stmt)
+
+				return add_node(p, Node{.Procedure, data, token})
+			} else {
+				value := parse_expr(p)
+				expect(p, .Semicolon)
+
+				var_stmt := VarDecl{INVALID_NODE, value}
+				data := encode_data(&p.data, var_stmt)
+
+				return add_node(p, Node{.Variable, data, token})
+			}
+		case:
+			// expression statement
+			expression := parse_expr(p)
+			expect(p, .Semicolon)
+
+			expr_stmt := ExprStmt{expression}
+			data := encode_data(&p.data, expr_stmt)
+
+			return add_node(p, Node{.ExprStmt, data, token})
+		}
+	case .If:
+		next(p)
+
+		condition := parse_expr(p)
+		then_body := parse_toplevel(p)
+
+		else_body := INVALID_NODE
+		if allow(p, .Else) {
+			else_body = parse_toplevel(p)
+		}
+
+		if_expr := IfExpr{condition, then_body, else_body}
+		data := encode_data(&p.data, if_expr)
+
+		return add_node(p, Node{.If, data, token})
+	case .For:
+		next(p)
+		initial := parse_toplevel(p)
+		condition := parse_expr(p)
+		expect(p, .Semicolon)
+		update := parse_expr(p)
+		body := parse_toplevel(p)
+
+		for_stmt := ForStmt{initial, condition, update, body}
+		data := encode_data(&p.data, for_stmt)
+
+		return add_node(p, Node{.For, data, token})
+	case .Return:
+		next(p)
+		value := parse_expr(p)
+		expect(p, .Semicolon)
+
+		return_stmt := ReturnStmt{value}
+		data := encode_data(&p.data, return_stmt)
+
+		return add_node(p, Node{.Return, data, token})
+	case .LeftBrace:
+		next(p)
+		stmts := make([dynamic]NodeIndex)
+		for peek(p) != .RightBrace && peek(p) != .Eof {
+			append(&stmts, parse_toplevel(p))
+		}
+		expect(p, .RightBrace)
+
+		block_stmt := BlockStmt{stmts[:]}
+		data := encode_data(&p.data, block_stmt)
+
+		return add_node(p, Node{.Block, data, token})
+	case:
+		// expression statement
+		expression := parse_expr(p)
+		expect(p, .Semicolon)
+
+		expr_stmt := ExprStmt{expression}
+		data := encode_data(&p.data, expr_stmt)
+
+		return add_node(p, Node{.ExprStmt, data, token})
+	}
+
+	return INVALID_NODE
+}
+
+parse :: proc(p: ^Parser) -> [dynamic]Node {
+	stmts := make([dynamic]NodeIndex)
+
+	for peek(p) != .Eof && len(p.errors) < MAX_PARSER_ERRORS {
+		append(&stmts, parse_toplevel(p))
+	}
+
+	return p.nodes
+}
+
 ast_to_string :: proc(p: ^Parser) -> string {
 	builder := strings.builder_make()
 
@@ -212,9 +547,9 @@ ast_to_string :: proc(p: ^Parser) -> string {
 		token := p.tokens[node.token]
 
 		#partial switch node.kind {
-		case .Primitive:
+		case .True, .False:
 			print_indent(builder, indent)
-			strings.write_string(builder, "Type: ")
+			strings.write_string(builder, "Boolean: ")
 			strings.write_string(builder, p.source[token.start:token.end])
 			strings.write_byte(builder, '\n')
 		case .Identifier:
@@ -383,9 +718,6 @@ program_to_string :: proc(p: ^Parser) -> string {
 		}
 
 		#partial switch node.kind {
-		case .Primitive:
-			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
 		case .Identifier:
 			token := p.tokens[node.token]
 			strings.write_string(builder, p.source[token.start:token.end])
@@ -421,7 +753,6 @@ program_to_string :: proc(p: ^Parser) -> string {
 		case .Procedure:
 			proc_stmt := decode_data(p.data[:], node.data, ProcDecl)
 			print_indent(builder, indent)
-			strings.write_string(builder, "def ")
 			id_token := p.tokens[proc_stmt.name]
 			strings.write_string(builder, p.source[id_token.start:id_token.end])
 			strings.write_byte(builder, '(')
@@ -491,285 +822,4 @@ program_to_string :: proc(p: ^Parser) -> string {
 
 	print_node(p, &builder, NodeIndex(len(p.nodes) - 1))
 	return strings.to_string(builder)
-}
-
-parse_atom :: proc(p: ^Parser) -> NodeIndex {
-	#partial switch peek(p) {
-	case .Identifier:
-		token := p.cursor
-		expect(p, .Identifier)
-		return add_node(p, Node{.Identifier, INVALID_DATA, token})
-	case .Number:
-		token := p.cursor
-		expect(p, .Number)
-		return add_node(p, Node{.Integer, INVALID_DATA, token})
-	case .True, .False:
-		add_error(p, "boolean literals not implemented", p.cursor)
-		return INVALID_NODE
-	case .LeftParen:
-		next(p)
-		expr := parse_expr(p)
-		expect(p, .RightParen)
-		return expr
-	}
-
-	add_error(p, fmt.tprintf("unexpected token: %v", peek(p)), p.cursor)
-	return INVALID_NODE
-}
-
-postfix_prec :: proc(kind: lexer.TokenKind) -> int {
-	#partial switch kind {
-	case .LeftParen:
-		return 7
-	case:
-		return 0
-	}
-}
-
-is_binary_op :: proc(kind: lexer.TokenKind) -> bool {
-	#partial switch kind {
-	case .Equal, .Plus, .Asterisk, .Less:
-		return true
-	case:
-		return false
-	}
-}
-
-infix_prec :: proc(kind: lexer.TokenKind) -> int {
-	#partial switch kind {
-	case .Equal:
-		return 1
-	case .Less:
-		return 2
-	case .Plus:
-		return 3
-	case .Asterisk:
-		return 4
-	case:
-		return 0
-	}
-}
-
-is_right_associative :: proc(kind: lexer.TokenKind) -> bool {
-	#partial switch kind {
-	case .Equal:
-		return true
-	case .Plus, .Asterisk, .Less:
-		return false
-	case:
-		return false
-	}
-}
-
-parse_expr :: proc(p: ^Parser, min_prec := 0) -> NodeIndex {
-	left := parse_atom(p)
-
-	for postfix_prec(peek(p)) > min_prec {
-		#partial switch peek(p) {
-		case .LeftParen:
-			token := p.cursor
-			next(p)
-			args := make([dynamic]NodeIndex)
-			if !allow(p, .RightParen) {
-				append(&args, parse_expr(p))
-				for allow(p, .Comma) {
-					append(&args, parse_expr(p))
-				}
-				expect(p, .RightParen)
-			}
-			call_expr := CallExpr{left, args[:]}
-			data := encode_data(&p.data, call_expr)
-			left = add_node(p, Node{.Call, data, token})
-		case:
-			add_error(p, fmt.tprintf("unexpected postfix operator: %v", peek(p)), p.cursor)
-		}
-	}
-
-	// is this is_binary_op call necessary?
-	for is_binary_op(peek(p)) && infix_prec(peek(p)) >= min_prec {
-		token := p.cursor
-		op_kind := peek(p)
-		prec := infix_prec(op_kind)
-
-		next_min_prec: int
-		if is_right_associative(op_kind) {
-			next_min_prec = prec
-		} else {
-			next_min_prec = prec + 1
-		}
-
-		next(p)
-		right := parse_expr(p, next_min_prec)
-
-		#partial switch op_kind {
-		case .Equal:
-			assign_expr := AssignExpr{left, right}
-			data := encode_data(&p.data, assign_expr)
-			left = add_node(p, Node{.Assignment, data, token})
-		case .Plus:
-			add_expr := AddExpr{left, right}
-			data := encode_data(&p.data, add_expr)
-			left = add_node(p, Node{.Addition, data, token})
-		case .Asterisk:
-			mul_expr := MulExpr{left, right}
-			data := encode_data(&p.data, mul_expr)
-			left = add_node(p, Node{.Multiplication, data, token})
-		case .Less:
-			less_expr := LessExpr{left, right}
-			data := encode_data(&p.data, less_expr)
-			left = add_node(p, Node{.Less, data, token})
-		case:
-			for node in p.nodes {
-				fmt.println("NODE: %v", node)
-			}
-			add_error(p, fmt.tprintf("unexpected binary operator: %v", op_kind), p.cursor)
-		}
-	}
-
-	return left
-}
-
-parse_type :: proc(p: ^Parser) -> NodeIndex {
-	#partial switch peek(p) {
-	case .Identifier:
-		token := p.cursor
-		next(p)
-		return add_node(p, Node{.Primitive, INVALID_DATA, token})
-	case:
-		add_error(p, fmt.tprintf("unexpected type token: %v", peek(p)), p.cursor)
-		return INVALID_NODE
-	}
-}
-
-parse_param :: proc(p: ^Parser) -> NodeIndex {
-	token := p.cursor
-	expect(p, .Identifier)
-	expect(p, .Colon)
-	type := parse_type(p)
-
-	param_stmt := ParamDecl{type, INVALID_NODE}
-	data := encode_data(&p.data, param_stmt)
-
-	return add_node(p, Node{.Parameter, data, token})
-}
-
-parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
-	token := p.cursor
-
-	#partial switch peek(p) {
-	case .Identifier:
-		#partial switch peek_next(p) {
-		case .Colon:
-			token := p.cursor
-			next(p)
-			next(p)
-			type := parse_type(p)
-			expect(p, .Equal)
-			value := parse_expr(p)
-			expect(p, .Semicolon)
-
-			var_stmt := VarDecl{INVALID_NODE, value}
-			data := encode_data(&p.data, var_stmt)
-
-			return add_node(p, Node{.Variable, data, token})
-		case .ColonEqual:
-			token := p.cursor
-			next(p)
-			next(p)
-			value := parse_expr(p)
-			expect(p, .Semicolon)
-
-			var_stmt := VarDecl{INVALID_NODE, value}
-			data := encode_data(&p.data, var_stmt)
-
-			return add_node(p, Node{.Variable, data, token})
-		case:
-			expression := parse_expr(p)
-			expect(p, .Semicolon)
-
-			expr_stmt := ExprStmt{expression}
-			data := encode_data(&p.data, expr_stmt)
-
-			return add_node(p, Node{.ExprStmt, data, token})
-		}
-	case .Def:
-		next(p)
-
-		identifier := p.cursor
-		expect(p, .Identifier)
-
-		parameters := make([dynamic]NodeIndex)
-		if allow(p, .LeftParen) {
-			if peek(p) != .RightParen {
-				append(&parameters, parse_param(p))
-				for allow(p, .Comma) {
-					append(&parameters, parse_param(p))
-				}
-			}
-			expect(p, .RightParen)
-		}
-
-		expect(p, .Arrow)
-		return_type := parse_type(p)
-
-		body := parse_toplevel(p)
-
-		proc_stmt := ProcDecl{identifier, return_type, body, parameters[:]}
-		data := encode_data(&p.data, proc_stmt)
-
-		return add_node(p, Node{.Procedure, data, token})
-	case .For:
-		next(p)
-		initial := parse_toplevel(p)
-		condition := parse_expr(p)
-		expect(p, .Semicolon)
-		update := parse_expr(p)
-		body := parse_toplevel(p)
-
-		for_stmt := ForStmt{initial, condition, update, body}
-		data := encode_data(&p.data, for_stmt)
-
-		return add_node(p, Node{.For, data, token})
-	case .Return:
-		next(p)
-		value := parse_expr(p)
-		expect(p, .Semicolon)
-
-		return_stmt := ReturnStmt{value}
-		data := encode_data(&p.data, return_stmt)
-
-		return add_node(p, Node{.Return, data, token})
-	case .LeftBrace:
-		next(p)
-		stmts := make([dynamic]NodeIndex)
-		for peek(p) != .RightBrace && peek(p) != .Eof {
-			append(&stmts, parse_toplevel(p))
-		}
-		expect(p, .RightBrace)
-
-		block_stmt := BlockStmt{stmts[:]}
-		data := encode_data(&p.data, block_stmt)
-
-		return add_node(p, Node{.Block, data, token})
-	case:
-		expression := parse_expr(p)
-		expect(p, .Semicolon)
-
-		expr_stmt := ExprStmt{expression}
-		data := encode_data(&p.data, expr_stmt)
-
-		return add_node(p, Node{.ExprStmt, data, token})
-	}
-
-	return INVALID_NODE
-}
-
-parse :: proc(p: ^Parser) -> [dynamic]Node {
-	stmts := make([dynamic]NodeIndex)
-
-	for peek(p) != .Eof && len(p.errors) < MAX_PARSER_ERRORS {
-		append(&stmts, parse_toplevel(p))
-	}
-
-	return p.nodes
 }

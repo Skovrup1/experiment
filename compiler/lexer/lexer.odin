@@ -5,7 +5,8 @@ TokenKind :: enum u8 {
 	Eof,
 	//
 	Identifier,
-	Number,
+	Integer,
+	Float,
 	String,
 	//
 	Plus, // +
@@ -16,7 +17,7 @@ TokenKind :: enum u8 {
 	Equal, // =
 	ColonEqual, // :=
 	ColonColon, // ::
-	DoubleEqual, // ==
+	EqualEqual, // ==
 	NotEqual, // !=
 	Less, // <
 	LessEqual, // <=
@@ -32,7 +33,6 @@ TokenKind :: enum u8 {
 	Dot, // .
 	Arrow, // ->
 	//
-	Def,
 	If,
 	Else,
 	For,
@@ -68,7 +68,6 @@ Scanner :: struct {
 make_keywords :: proc() -> map[string]TokenKind {
 	keywords := make(map[string]TokenKind)
 
-	keywords["def"] = .Def
 	keywords["if"] = .If
 	keywords["else"] = .Else
 	keywords["for"] = .For
@@ -150,10 +149,26 @@ is_alpha :: proc(char: byte) -> bool {
 }
 
 number :: proc(s: ^Scanner) {
+	is_integer := true
+
 	for is_digit(peek(s)) {
 		advance(s)
 	}
-	add_token(s, .Number)
+
+	if peek(s) == '.' {
+		is_integer = false
+		advance(s)
+
+		for is_digit(peek(s)) {
+			advance(s)
+		}
+	}
+
+	if is_integer {
+		add_token(s, .Integer)
+	} else {
+		add_token(s, .Float)
+	}
 }
 
 identifier :: proc(s: ^Scanner) {
@@ -201,7 +216,7 @@ scan_token :: proc(s: ^Scanner) {
 	case '=':
 		if peek(s) == '=' {
 			advance(s)
-			add_token(s, .DoubleEqual)
+			add_token(s, .EqualEqual)
 		} else {
 			add_token(s, .Equal)
 		}

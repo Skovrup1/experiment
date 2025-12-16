@@ -7,13 +7,14 @@ import "core:fmt"
 import "core:slice"
 
 BaseType :: enum u8 {
-	Nil,
+	Nil = 0,
 	B32,
 	U32,
 	S32,
+	F32,
 }
 
-base_type_strings := [?]string{"Nil", "B32", "U32", "S32"}
+base_type_strings := [?]string{"Nil", "B32", "U32", "S32", "F32"}
 
 TypeKind :: enum u8 {
 	Primitive,
@@ -91,8 +92,6 @@ make_analyzer :: proc(
 	nodes: []parser.Node,
 	node_data: []u32,
 ) -> Analyzer {
-	errors := make([dynamic]SemaError)
-
 	types := make([dynamic]Type)
 	type_map := make(map[u64]TypeIndex)
 	return_type_stack := make([dynamic]TypeIndex, 0, 16)
@@ -102,7 +101,10 @@ make_analyzer :: proc(
 	string_map := make(map[string]StringIndex)
 
 	symbols := make([dynamic]Symbol)
+
 	scopes := make([dynamic]Scope, 0, 16)
+
+	errors := make([dynamic]SemaError)
 
 	a := Analyzer {
 		source,
@@ -138,13 +140,10 @@ check :: proc(
 
 	inferred_type := infer(a, node_index)
 	if inferred_type != expected_type {
-		panic(
-			fmt.tprintf(
-				"type mismatch: expected type '%v', but got '%v' at %v\n",
-				expected_type,
-				inferred_type,
-				loc,
-			),
+		add_error(
+			a,
+			fmt.tprintf("type mismatch %v != %v at %v", expected_type, inferred_type, loc),
+			node_index,
 		)
 	}
 }
@@ -179,22 +178,73 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (inferred: TypeInde
 	token := a.tokens[node.token]
 
 	#partial switch node.kind {
-	//case .Bool: // untyped bool
+	case .True, .False:
+		inferred = TypeIndex(BaseType.B32) // untyped bool
 	case .Integer:
 		inferred = TypeIndex(BaseType.S32) // untyped integer
-	//case .Float: // untyped float
+	case .Float:
+		inferred = TypeIndex(BaseType.F32) // untyped float
 	case .Identifier:
 		name := a.source[token.start:token.end]
 
-		if type_index, ok := get_type_from_name(name); ok {
-			inferred = type_index
-		} else if symbol_index, ok := lookup_symbol(a, name); ok {
+		//if type_index, ok := get_type_from_name(name); ok {}
+
+		if symbol_index, ok := lookup_symbol(a, name); ok {
 			inferred = a.symbols[symbol_index].type
 		} else {
-			add_error(a, "not able to infer the type", node_index)
+			add_error(a, fmt.tprintf("undeclared indentifier, %v", name), node_index)
 		}
+	case .Call:
+		call_expr := parser.decode_data(a.node_data, node.data, parser.CallExpr)
+
+		callee_type_index := infer(a, call_expr.callee)
+		callee_type := a.types[callee_type_index]
+
+		#partial switch callee_type.kind {
+		case .Primitive:
+			panic("callee primitive")
+		case .Procedure:
+			panic("callee procedure")
+		case:
+			panic(fmt.tprintf("unhandled callee_type, %v", callee_type.kind))
+		}
+	case .Assignment:
+		assign_expr := parser.decode_data(a.node_data, node.data, parser.AssignExpr)
+
+		right := infer(a, assign_expr.right)
+		check(a, assign_expr.left, right)
+
+		inferred = right
+	case .Addition:
+		add_expr := parser.decode_data(a.node_data, node.data, parser.AddExpr)
+
+		right := infer(a, add_expr.right)
+		check(a, add_expr.left, right)
+
+		inferred = right
+	case .Multiplication:
+		mul_expr := parser.decode_data(a.node_data, node.data, parser.MulExpr)
+
+		right := infer(a, mul_expr.right)
+		check(a, mul_expr.left, right)
+
+		inferred = right
+	case .Equal:
+		equal_expr := parser.decode_data(a.node_data, node.data, parser.EqualExpr)
+
+		right := infer(a, equal_expr.right)
+		check(a, equal_expr.left, right)
+
+		inferred = TypeIndex(BaseType.B32)
+	case .Less:
+		less_expr := parser.decode_data(a.node_data, node.data, parser.LessExpr)
+
+		right := infer(a, less_expr.right)
+		check(a, less_expr.left, right)
+
+		inferred = TypeIndex(BaseType.B32)
 	case:
-		add_error(a, fmt.tprintf("not able to infer this type = %v", node.kind), node_index)
+		panic(fmt.tprintf("unhandled infer, %v", node.kind))
 	}
 
 	a.node_types[node_index] = inferred
@@ -221,19 +271,6 @@ get_or_add_string :: proc(a: ^Analyzer, str: string) -> StringIndex {
 	return index
 }
 
-get_base_type :: proc(name: string) -> (BaseType, bool) {
-	switch name {
-	case "B32":
-		return BaseType.B32, true
-	case "U32":
-		return BaseType.U32, true
-	case "S32":
-		return BaseType.S32, true
-	}
-
-	return BaseType.Nil, false
-}
-
 lookup_type :: proc(a: Analyzer, node_index: parser.NodeIndex) -> (TypeIndex, bool) {
 	if (node_index == parser.INVALID_NODE) {
 		return INVALID_TYPE, false
@@ -241,10 +278,10 @@ lookup_type :: proc(a: Analyzer, node_index: parser.NodeIndex) -> (TypeIndex, bo
 
 	node := a.nodes[node_index]
 	#partial switch node.kind {
-	case .Primitive:
+	case .Identifier:
 		token := a.tokens[node.token]
 		name := a.source[token.start:token.end]
-		if type_kind, ok := get_base_type(name); ok {
+		if type_kind, ok := get_type_from_name(name); ok {
 			return TypeIndex(type_kind), true
 		}
 	}
@@ -373,7 +410,7 @@ collect :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		if return_stmt.value != parser.INVALID_NODE {
 			check(a, return_stmt.value, expected_type)
 		} else {
-			panic("error: missing return value")
+			add_error(a, "missing return value", node_index)
 		}
 	case .Procedure:
 		proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
@@ -401,7 +438,7 @@ collect :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 
 		return_type, return_ok := lookup_type(a^, proc_decl.return_type)
 		if !return_ok {
-			panic("missing return type!")
+			add_error(a, "missing return type!", node_index)
 		}
 
 		append(&a.return_type_stack, return_type)
@@ -437,8 +474,6 @@ process :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		pop(&a.scopes)
 	case .Return:
 		collect(a, node_index)
-	case .Parameter:
-		panic("todo param")
 	case .Variable:
 		collect(a, node_index)
 	case .Procedure:
@@ -453,6 +488,13 @@ process :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		process(a, proc_decl.body)
 
 		pop(&a.scopes)
+	case .If:
+		if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
+
+		collect(a, if_expr.condition)
+		process(a, if_expr.then_body)
+		process(a, if_expr.else_body)
+	case .Parameter:
 	case:
 		panic(fmt.tprintf("unhandled process, %v", node.kind))
 	}
