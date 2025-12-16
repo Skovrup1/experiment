@@ -177,15 +177,33 @@ infer :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (inferred: TypeInde
 	node := a.nodes[node_index]
 	token := a.tokens[node.token]
 
-	#partial switch node.kind {
-	case .True, .False:
-		inferred = TypeIndex(BaseType.B32) // untyped bool
-	case .Integer:
-		inferred = TypeIndex(BaseType.S32) // untyped integer
-	case .Float:
-		inferred = TypeIndex(BaseType.F32) // untyped float
-	case .Identifier:
-		name := a.source[token.start:token.end]
+        #partial switch node.kind {
+        case .True, .False:
+                inferred = TypeIndex(BaseType.B32) // untyped bool
+        case .Integer:
+                inferred = TypeIndex(BaseType.S32) // untyped integer
+        case .Float:
+                inferred = TypeIndex(BaseType.F32) // untyped float
+        case .If:
+                if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
+
+                check(a, if_expr.condition, TypeIndex(BaseType.B32))
+
+                then_type := infer(a, if_expr.then_body)
+
+                if if_expr.else_body != parser.INVALID_NODE {
+                        else_type := infer(a, if_expr.else_body)
+
+                        if then_type != else_type {
+                                add_error(a, "type mismatch in if expression branches", node_index)
+                        }
+
+                        inferred = then_type
+                } else {
+                        inferred = TypeIndex(BaseType.Nil)
+                }
+        case .Identifier:
+                name := a.source[token.start:token.end]
 
 		//if type_index, ok := get_type_from_name(name); ok {}
 
@@ -374,47 +392,55 @@ add_symbol_to_current_scope :: proc(a: ^Analyzer, symbol: Symbol) {
 }
 
 collect :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
-	node := a.nodes[node_index]
-	token := a.tokens[node.token]
+        node := a.nodes[node_index]
+        token := a.tokens[node.token]
 
-	#partial switch node.kind {
-	case .Parameter:
-		param_name := a.source[token.start:token.end]
+        #partial switch node.kind {
+        case .Parameter:
+                param_name := a.source[token.start:token.end]
 
-		param_decl := parser.decode_data(a.node_data, node.data, parser.ParamDecl)
+                param_decl := parser.decode_data(a.node_data, node.data, parser.ParamDecl)
 
-		type, ok := lookup_type(a^, param_decl.type)
-		if !ok {
-			type = infer(a, param_decl.value)
-		}
+                type, ok := lookup_type(a^, param_decl.type)
+                if !ok {
+                        if param_decl.value == parser.INVALID_NODE {
+                                add_error(a, "parameter missing type", node_index)
+                                type = INVALID_TYPE
+                        } else {
+                                type = infer(a, param_decl.value)
+                        }
+                }
 
-		symbol := Symbol{.Parameter, get_or_add_string(a, param_name), type}
-		add_symbol_to_current_scope(a, symbol)
-	case .Variable:
-		var_name := a.source[token.start:token.end]
+                if param_decl.value != parser.INVALID_NODE && type != INVALID_TYPE {
+                        check(a, param_decl.value, type)
+                }
 
-		var_decl := parser.decode_data(a.node_data, node.data, parser.VarDecl)
+                symbol := Symbol{.Parameter, get_or_add_string(a, param_name), type}
+                add_symbol_to_current_scope(a, symbol)
+        case .Variable:
+                var_name := a.source[token.start:token.end]
 
-		type, ok := lookup_type(a^, var_decl.type)
-		if !ok {
-			type = infer(a, var_decl.value)
-		}
+                var_decl := parser.decode_data(a.node_data, node.data, parser.VarDecl)
 
-		symbol := Symbol{.Variable, get_or_add_string(a, var_name), type}
-		add_symbol_to_current_scope(a, symbol)
-	case .Return:
-		expected_type := pop(&a.return_type_stack)
+                type, ok := lookup_type(a^, var_decl.type)
+                if !ok {
+                        if var_decl.value == parser.INVALID_NODE {
+                                add_error(a, "variable missing type", node_index)
+                                type = INVALID_TYPE
+                        } else {
+                                type = infer(a, var_decl.value)
+                        }
+                }
 
-		return_stmt := parser.decode_data(a.node_data, node.data, parser.ReturnStmt)
+                if var_decl.value != parser.INVALID_NODE && type != INVALID_TYPE {
+                        check(a, var_decl.value, type)
+                }
 
-		if return_stmt.value != parser.INVALID_NODE {
-			check(a, return_stmt.value, expected_type)
-		} else {
-			add_error(a, "missing return value", node_index)
-		}
-	case .Procedure:
-		proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
-		proc_token := a.tokens[proc_decl.name]
+                symbol := Symbol{.Variable, get_or_add_string(a, var_name), type}
+                add_symbol_to_current_scope(a, symbol)
+        case .Procedure:
+                proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
+                proc_token := a.tokens[proc_decl.name]
 		proc_name := a.source[proc_token.start:proc_token.end]
 
 		param_types := make([dynamic]TypeIndex, 0, len(proc_decl.parameters))
@@ -437,16 +463,14 @@ collect :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		}
 
 		return_type, return_ok := lookup_type(a^, proc_decl.return_type)
-		if !return_ok {
-			add_error(a, "missing return type!", node_index)
-		}
+                if !return_ok {
+                        add_error(a, "missing return type!", node_index)
+                }
 
-		append(&a.return_type_stack, return_type)
-
-		type_index := get_or_add_type(
-			a,
-			{.Procedure, {procedure = {return_type, param_names[:], param_types[:]}}},
-		)
+                type_index := get_or_add_type(
+                        a,
+                        {.Procedure, {procedure = {return_type, param_names[:], param_types[:]}}},
+                )
 
 		symbol := Symbol{.Procedure, get_or_add_string(a, proc_name), type_index}
 		add_symbol_to_current_scope(a, symbol)
@@ -456,53 +480,201 @@ collect :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 }
 
 process :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
-	assert(node_index != parser.INVALID_NODE)
+        assert(node_index != parser.INVALID_NODE)
 
 	node := a.nodes[node_index]
 	token := a.tokens[node.token]
 
-	#partial switch node.kind {
-	case .Block:
-		append(&a.scopes, make(Scope))
+        #partial switch node.kind {
+        case .Block:
+                append(&a.scopes, make(Scope))
 
 		block_stmt := parser.decode_data(a.node_data, node.data, parser.BlockStmt)
 
-		for stmt in block_stmt.statements {
-			process(a, stmt)
-		}
+                for stmt in block_stmt.statements {
+                        process(a, stmt)
+                }
 
-		pop(&a.scopes)
-	case .Return:
-		collect(a, node_index)
-	case .Variable:
-		collect(a, node_index)
-	case .Procedure:
-		append(&a.scopes, make(Scope))
+                pop(&a.scopes)
+        case .Variable:
+                name := a.source[token.start:token.end]
+                current_scope := a.scopes[len(a.scopes) - 1]
 
-		proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
+                if string_index, exists := a.string_map[name]; exists {
+                        if _, exists := current_scope[string_index]; exists {
+                                return
+                        }
+                }
 
-		for param_node_index in proc_decl.parameters {
-			collect(a, param_node_index)
-		}
+                collect(a, node_index)
+        case .Return:
+                if len(a.return_type_stack) == 0 {
+                        add_error(a, "return outside of procedure", node_index)
+                        return
+                }
 
-		process(a, proc_decl.body)
+                expected_type := a.return_type_stack[len(a.return_type_stack) - 1]
 
-		pop(&a.scopes)
-	case .If:
-		if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
+                return_stmt := parser.decode_data(a.node_data, node.data, parser.ReturnStmt)
 
-		collect(a, if_expr.condition)
-		process(a, if_expr.then_body)
-		process(a, if_expr.else_body)
-	case .Parameter:
-	case:
-		panic(fmt.tprintf("unhandled process, %v", node.kind))
-	}
+                if return_stmt.value != parser.INVALID_NODE {
+                        check(a, return_stmt.value, expected_type)
+                } else {
+                        add_error(a, "missing return value", node_index)
+                }
+        case .Procedure:
+                append(&a.scopes, make(Scope))
+
+                proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
+
+                return_type, _ := lookup_type(a^, proc_decl.return_type)
+                append(&a.return_type_stack, return_type)
+
+                for param_node_index in proc_decl.parameters {
+                        collect(a, param_node_index)
+                }
+
+                process(a, proc_decl.body)
+
+                pop(&a.return_type_stack)
+                pop(&a.scopes)
+        case .If:
+                if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
+
+                check(a, if_expr.condition, TypeIndex(BaseType.B32))
+
+                process(a, if_expr.then_body)
+
+                if if_expr.else_body != parser.INVALID_NODE {
+                        process(a, if_expr.else_body)
+                }
+        case .Parameter:
+        case:
+                panic(fmt.tprintf("unhandled process, %v", node.kind))
+        }
 }
 
 analyze :: proc(a: ^Analyzer) {
-	root_index := parser.NodeIndex(len(a.nodes) - 1)
-	append(&a.scopes, make(Scope))
-	collect(a, root_index)
-	process(a, root_index)
+        append(&a.scopes, make(Scope))
+
+        referenced := make([]bool, len(a.nodes))
+
+        mark_child :: proc(index: parser.NodeIndex) {
+                if index != parser.INVALID_NODE {
+                        referenced[index] = true
+                }
+        }
+
+        for node_index, node in a.nodes {
+                #partial switch node.kind {
+                case .Block:
+                        block_stmt := parser.decode_data(a.node_data, node.data, parser.BlockStmt)
+
+                        for stmt in block_stmt.statements {
+                                mark_child(stmt)
+                        }
+                case .Variable:
+                        var_decl := parser.decode_data(a.node_data, node.data, parser.VarDecl)
+
+                        mark_child(var_decl.type)
+                        mark_child(var_decl.value)
+                case .Parameter:
+                        param_decl := parser.decode_data(a.node_data, node.data, parser.ParamDecl)
+
+                        mark_child(param_decl.type)
+                        mark_child(param_decl.value)
+                case .Procedure:
+                        proc_decl := parser.decode_data(a.node_data, node.data, parser.ProcDecl)
+
+                        mark_child(proc_decl.return_type)
+                        mark_child(proc_decl.body)
+
+                        for param in proc_decl.parameters {
+                                mark_child(param)
+                        }
+                case .If:
+                        if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
+
+                        mark_child(if_expr.condition)
+                        mark_child(if_expr.then_body)
+                        mark_child(if_expr.else_body)
+                case .For:
+                        for_stmt := parser.decode_data(a.node_data, node.data, parser.ForStmt)
+
+                        mark_child(for_stmt.initial)
+                        mark_child(for_stmt.condition)
+                        mark_child(for_stmt.update)
+                        mark_child(for_stmt.body)
+                case .Return:
+                        return_stmt := parser.decode_data(a.node_data, node.data, parser.ReturnStmt)
+
+                        mark_child(return_stmt.value)
+                case .ExprStmt:
+                        expr_stmt := parser.decode_data(a.node_data, node.data, parser.ExprStmt)
+
+                        mark_child(expr_stmt.expression)
+                case .Call:
+                        call_expr := parser.decode_data(a.node_data, node.data, parser.CallExpr)
+
+                        mark_child(call_expr.callee)
+
+                        for arg in call_expr.arguments {
+                                mark_child(arg)
+                        }
+                case .Assignment:
+                        assign_expr := parser.decode_data(a.node_data, node.data, parser.AssignExpr)
+
+                        mark_child(assign_expr.left)
+                        mark_child(assign_expr.right)
+                case .Addition:
+                        add_expr := parser.decode_data(a.node_data, node.data, parser.AddExpr)
+
+                        mark_child(add_expr.left)
+                        mark_child(add_expr.right)
+                case .Multiplication:
+                        mul_expr := parser.decode_data(a.node_data, node.data, parser.MulExpr)
+
+                        mark_child(mul_expr.left)
+                        mark_child(mul_expr.right)
+                case .Equal:
+                        equal_expr := parser.decode_data(a.node_data, node.data, parser.EqualExpr)
+
+                        mark_child(equal_expr.left)
+                        mark_child(equal_expr.right)
+                case .Less:
+                        less_expr := parser.decode_data(a.node_data, node.data, parser.LessExpr)
+
+                        mark_child(less_expr.left)
+                        mark_child(less_expr.right)
+                case:
+                        // literals and identifiers have no children
+                }
+        }
+
+        top_level_nodes := make([dynamic]parser.NodeIndex)
+        for node_index in 0 ..< len(a.nodes) {
+                        if !referenced[node_index] {
+                                append(&top_level_nodes, parser.NodeIndex(node_index))
+                        }
+        }
+
+        for top_node in top_level_nodes {
+                node := a.nodes[top_node]
+
+                if node.kind == .Procedure {
+                        collect(a, top_node)
+                }
+        }
+
+        for top_node in top_level_nodes {
+                node := a.nodes[top_node]
+
+                if node.kind == .Variable {
+                        collect(a, top_node)
+                }
+        }
+
+        for top_node in top_level_nodes {
+                process(a, top_node)
+        }
 }
