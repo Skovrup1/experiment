@@ -276,6 +276,10 @@ scan_token :: proc(s: ^Scanner) {
 }
 
 scan_tokens :: proc(s: ^Scanner) -> [dynamic]Token {
+	if is_at_end(s) { 	// guards againt empty input
+		add_token(s, .Eof)
+	}
+
 	for !is_at_end(s) {
 		scan_token(s)
 	}
@@ -284,5 +288,5 @@ scan_tokens :: proc(s: ^Scanner) -> [dynamic]Token {
 }
 
 token_text :: proc(source: string, token: Token) -> string {
-    return source[token.start:token.end]
+	return source[token.start:token.end]
 }

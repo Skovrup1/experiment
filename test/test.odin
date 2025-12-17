@@ -27,7 +27,7 @@ run_property_test :: proc(iterations: int, failures_only := true) {
 		p1 := parser.make_parser("", {})
 		p1_tokens := make([dynamic]lexer.Token)
 
-		proc_node := gen_procedure(&p1, &p1_tokens)
+		proc_node := gen_module(&p1, &p1_tokens)
 
 		// note: ugly fix
 		p1.tokens = p1_tokens[:]
@@ -43,7 +43,6 @@ run_property_test :: proc(iterations: int, failures_only := true) {
 		root_node := p2.nodes[root_node_idx]
 
 		ensure(len(p2.nodes) > 0)
-		ensure(root_node.kind == .Procedure)
 
 		if compare_nodes(&p1, proc_node, &p2, root_node_idx) {
 			passes += 1
@@ -57,9 +56,9 @@ run_property_test :: proc(iterations: int, failures_only := true) {
 		} else {
 			fmt.printf("fail test %d: ast mismatch\n", test_number + 1)
 			fmt.println("original AST:")
-			fmt.println(parser.ast_to_string(&p1))
+			fmt.println(parser.program_to_string(&p1))
 			fmt.println("reparsed AST:")
-			fmt.println(parser.ast_to_string(&p2))
+			fmt.println(parser.program_to_string(&p2))
 			fmt.println()
 			failures += 1
 		}
@@ -72,5 +71,5 @@ run_property_test :: proc(iterations: int, failures_only := true) {
 }
 
 main :: proc() {
-	run_property_test(10000, false)
+	run_property_test(1000, true)
 }

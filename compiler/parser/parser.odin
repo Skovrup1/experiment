@@ -35,14 +35,6 @@ ModuleDecl :: struct {
 	statements: []NodeIndex,
 }
 
-IntLit :: struct {
-	value: i64,
-}
-
-FloatLit :: struct {
-	value: f64,
-}
-
 VarDecl :: struct {
 	type:  NodeIndex,
 	value: NodeIndex,
@@ -553,10 +545,12 @@ program_to_string :: proc(p: ^Parser) -> string {
 
 	print_node :: proc(
 		p: ^Parser,
-		builder: ^strings.Builder,
+		b: ^strings.Builder,
 		index: NodeIndex,
 		indent := 0,
 		parent_prec := 0,
+		omit_stmt_suffix := false,
+		emit_indent := true,
 	) {
 		print_indent :: proc(builder: ^strings.Builder, indent: int) {
 			for _ in 0 ..< indent {
@@ -565,8 +559,10 @@ program_to_string :: proc(p: ^Parser) -> string {
 		}
 
 		if index == INVALID_NODE {
-			print_indent(builder, indent)
-			strings.write_string(builder, "invalid node")
+			if emit_indent {
+				print_indent(b, indent)
+			}
+			strings.write_string(b, "invalid node")
 			return
 		}
 
@@ -578,132 +574,160 @@ program_to_string :: proc(p: ^Parser) -> string {
 		needs_parens := node_prec < parent_prec
 
 		if needs_parens {
-			strings.write_byte(builder, '(')
+			strings.write_byte(b, '(')
 		}
 
 		#partial switch node.kind {
 		case .Identifier:
 			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(b, p.source[token.start:token.end])
 		case .True, .False:
 			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(b, p.source[token.start:token.end])
 		case .Integer:
 			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(b, p.source[token.start:token.end])
 		case .Float:
 			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
+			strings.write_string(b, p.source[token.start:token.end])
 		case .Variable:
 			var_stmt := decode_data(p.data[:], node.data, VarDecl)
 			token := p.tokens[node.token]
-			if indent > 0 {
-				print_indent(builder, indent)
+			if emit_indent {
+				print_indent(b, indent)
 			}
-			strings.write_string(builder, p.source[token.start:token.end])
-			strings.write_string(builder, " := ")
-			print_node(p, builder, var_stmt.value)
-			if indent > 0 {
-				strings.write_string(builder, ";\n")
+			strings.write_string(b, p.source[token.start:token.end])
+			strings.write_string(b, " := ")
+			print_node(p, b, var_stmt.value)
+			if !omit_stmt_suffix {
+				strings.write_string(b, "; ")
 			}
 		case .Block:
-			strings.write_string(builder, " {\n")
+			strings.write_string(b, " {")
 			block_stmt := decode_data(p.data[:], node.data, BlockStmt)
 			for stmt in block_stmt.statements {
-				print_node(p, builder, stmt, next_indent)
+				strings.write_rune(b, '\n')
+				print_node(p, b, stmt, next_indent)
 			}
-			print_indent(builder, indent)
-			strings.write_string(builder, "}\n")
+			if len(block_stmt.statements) > 0 {
+				strings.write_rune(b, '\n')
+			    print_indent(b, indent)
+			}
+			strings.write_string(b, "} ")
 		case .Parameter:
 			param_stmt := decode_data(p.data[:], node.data, ParamDecl)
 			token := p.tokens[node.token]
-			strings.write_string(builder, p.source[token.start:token.end])
-			strings.write_string(builder, ": ")
-			print_node(p, builder, param_stmt.type)
+			strings.write_string(b, p.source[token.start:token.end])
+			strings.write_string(b, ": ")
+			print_node(p, b, param_stmt.type)
 		case .Procedure:
 			proc_stmt := decode_data(p.data[:], node.data, ProcDecl)
-			print_indent(builder, indent)
-			id_token := p.tokens[proc_stmt.name]
-			strings.write_string(builder, p.source[id_token.start:id_token.end])
-			strings.write_string(builder, " :: (")
-			for param, i in proc_stmt.parameters {
-				if i > 0 do strings.write_string(builder, ", ")
-				print_node(p, builder, param)
+			if emit_indent {
+				print_indent(b, indent)
 			}
-			strings.write_string(builder, ") -> ")
-			print_node(p, builder, proc_stmt.return_type)
-			print_node(p, builder, proc_stmt.body, indent)
+			id_token := p.tokens[proc_stmt.name]
+			strings.write_string(b, p.source[id_token.start:id_token.end])
+			strings.write_string(b, " :: (")
+			for param, i in proc_stmt.parameters {
+				if i > 0 do strings.write_string(b, ", ")
+				print_node(p, b, param)
+			}
+			strings.write_string(b, ")")
+			if proc_stmt.return_type != INVALID_NODE {
+				strings.write_string(b, " -> ")
+				print_node(p, b, proc_stmt.return_type)
+			}
+			print_node(p, b, proc_stmt.body, indent)
 		case .If:
 			if_expr := decode_data(p.data[:], node.data, IfExpr)
-			print_indent(builder, indent)
-			strings.write_string(builder, "if ")
-			print_node(p, builder, if_expr.condition)
-			print_node(p, builder, if_expr.then_body, indent)
+			if emit_indent {
+				print_indent(b, indent)
+			}
+			strings.write_string(b, "if ")
+			print_node(p, b, if_expr.condition)
+			print_node(p, b, if_expr.then_body, indent)
 			if if_expr.else_body != INVALID_NODE {
-				print_node(p, builder, if_expr.else_body)
+				strings.write_string(b, "else")
+				print_node(p, b, if_expr.else_body, indent)
 			}
 		case .For:
 			for_stmt := decode_data(p.data[:], node.data, ForStmt)
-			print_indent(builder, indent)
-			strings.write_string(builder, "for ")
-			print_node(p, builder, for_stmt.initial)
-			strings.write_string(builder, "; ")
-			print_node(p, builder, for_stmt.condition)
-			strings.write_string(builder, "; ")
-			print_node(p, builder, for_stmt.update)
-			print_node(p, builder, for_stmt.body, indent)
+			if emit_indent {
+				print_indent(b, indent)
+			}
+			strings.write_string(b, "for ")
+			print_node(p, b, for_stmt.initial, indent, parent_prec, true, false)
+			strings.write_string(b, "; ")
+			print_node(p, b, for_stmt.condition)
+			strings.write_string(b, "; ")
+			print_node(p, b, for_stmt.update, indent, parent_prec, true, false)
+			print_node(p, b, for_stmt.body, indent)
 		case .Return:
 			return_stmt := decode_data(p.data[:], node.data, ReturnStmt)
-			print_indent(builder, indent)
-			strings.write_string(builder, "return")
-			if return_stmt.value != INVALID_NODE {
-				strings.write_string(builder, " ")
-				print_node(p, builder, return_stmt.value)
+			if emit_indent {
+				print_indent(b, indent)
 			}
-			strings.write_string(builder, ";\n")
+			strings.write_string(b, "return")
+			if return_stmt.value != INVALID_NODE {
+				strings.write_string(b, " ")
+				print_node(p, b, return_stmt.value)
+			}
+			if !omit_stmt_suffix {
+				strings.write_string(b, "; ")
+			}
 		case .ExprStmt:
 			expr_stmt := decode_data(p.data[:], node.data, ExprStmt)
-			print_indent(builder, indent)
-			print_node(p, builder, expr_stmt.inner)
-			strings.write_string(builder, ";\n")
+			if emit_indent {
+				print_indent(b, indent)
+			}
+			print_node(p, b, expr_stmt.inner)
+			if !omit_stmt_suffix {
+				strings.write_string(b, "; ")
+			}
+		case .Module:
+			module_decl := decode_data(p.data[:], node.data, ModuleDecl)
+			for stmt, i in module_decl.statements {
+				if i > 0 do strings.write_rune(b, '\n')
+				print_node(p, b, stmt, indent)
+			}
 		case .Call:
 			call_expr := decode_data(p.data[:], node.data, CallExpr)
-			print_node(p, builder, call_expr.callee)
-			strings.write_byte(builder, '(')
+			print_node(p, b, call_expr.callee)
+			strings.write_byte(b, '(')
 			for arg, i in call_expr.arguments {
-				if i > 0 do strings.write_string(builder, ", ")
-				print_node(p, builder, arg)
+				if i > 0 do strings.write_string(b, ", ")
+				print_node(p, b, arg)
 			}
-			strings.write_byte(builder, ')')
+			strings.write_byte(b, ')')
 		case .Assignment:
 			assign_expr := decode_data(p.data[:], node.data, AssignExpr)
-			print_node(p, builder, assign_expr.left, indent, node_prec + 1)
-			strings.write_string(builder, " = ")
-			print_node(p, builder, assign_expr.right, indent, node_prec)
+			print_node(p, b, assign_expr.left, indent, node_prec + 1)
+			strings.write_string(b, " = ")
+			print_node(p, b, assign_expr.right, indent, node_prec)
 		case .Addition:
 			add_expr := decode_data(p.data[:], node.data, AddExpr)
-			print_node(p, builder, add_expr.left, indent, node_prec)
-			strings.write_string(builder, " + ")
-			print_node(p, builder, add_expr.right, indent, node_prec + 1)
+			print_node(p, b, add_expr.left, indent, node_prec)
+			strings.write_string(b, " + ")
+			print_node(p, b, add_expr.right, indent, node_prec + 1)
 		case .Multiplication:
 			mul_expr := decode_data(p.data[:], node.data, MulExpr)
-			print_node(p, builder, mul_expr.left, indent, node_prec)
-			strings.write_string(builder, " * ")
-			print_node(p, builder, mul_expr.right, indent, node_prec + 1)
+			print_node(p, b, mul_expr.left, indent, node_prec)
+			strings.write_string(b, " * ")
+			print_node(p, b, mul_expr.right, indent, node_prec + 1)
 		case .Equal:
 			less_expr := decode_data(p.data[:], node.data, LessExpr)
-			print_node(p, builder, less_expr.left, indent, node_prec)
-			strings.write_string(builder, " == ")
-			print_node(p, builder, less_expr.right, indent, node_prec + 1)
+			print_node(p, b, less_expr.left, indent, node_prec)
+			strings.write_string(b, " == ")
+			print_node(p, b, less_expr.right, indent, node_prec + 1)
 		case .Less:
 			less_expr := decode_data(p.data[:], node.data, LessExpr)
-			print_node(p, builder, less_expr.left, indent, node_prec)
-			strings.write_string(builder, " < ")
-			print_node(p, builder, less_expr.right, indent, node_prec + 1)
+			print_node(p, b, less_expr.left, indent, node_prec)
+			strings.write_string(b, " < ")
+			print_node(p, b, less_expr.right, indent, node_prec + 1)
 		}
 
 		if needs_parens {
-			strings.write_byte(builder, ')')
+			strings.write_byte(b, ')')
 		}
 	}
 
