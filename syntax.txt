@@ -1,0 +1,37 @@
+// types
+B32
+U32
+S32
+F32
+
+// cast
+a := 0
+b := B32(a)
+
+// literals
+c := true;
+d := false;
+e := -1;
+f := 0.0;
+
+// control flow
+if a == b {
+} else {
+}
+
+for i := 0; i < 10; i += 1 {}
+
+// operations
+a = b;
+a + b;
+a * b;
+a == b;
+a < b;
+
+// procedures
+foo :: (a: S32) -> S32 {
+    return a;
+}
+
+// call
+foo(0);

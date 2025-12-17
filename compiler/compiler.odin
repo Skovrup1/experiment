@@ -1,9 +1,9 @@
 package compiler
 
+import "hir"
 import "lexer"
 import "parser"
 import "sema"
-import "hir"
 //import "tac"
 
 import "core:fmt"
@@ -17,9 +17,13 @@ main :: proc() {
 	arena_err := vmem.arena_init_growing(&arena, reserved = mem.Gigabyte)
 	ensure(arena_err == nil)
 	context.allocator = vmem.arena_allocator(&arena)
-	defer free_all(context.allocator)
-	defer free_all(context.temp_allocator)
-	defer vmem.arena_destroy(&arena)
+	defer {
+		fmt.printf("arena allocated: %dKB\n", arena.total_used / mem.Kilobyte)
+
+		free_all(context.allocator)
+		free_all(context.temp_allocator)
+		vmem.arena_destroy(&arena)
+	}
 
 	handle, open_err := os.open("examples/test.lang")
 	defer os.close(handle)
@@ -48,7 +52,7 @@ main :: proc() {
 	}
 
 	p := parser.make_parser(source, tokens[:])
-	ast := parser.parse(&p)
+	parser.parse(&p)
 
 	if len(p.errors) > 0 {
 		for err, i in p.errors {
@@ -62,9 +66,9 @@ main :: proc() {
 		fmt.println()
 	}
 
-	fmt.println(parser.ast_to_string(&p))
+	fmt.println(parser.program_to_string(&p))
 
-	a := sema.make_analyzer(source, tokens[:], ast[:], p.data[:])
+	a := sema.make_analyzer(source, tokens[:], p.nodes[:], p.data[:])
 	sema.analyze(&a)
 
 	if len(a.errors) > 0 {
@@ -83,12 +87,6 @@ main :: proc() {
 
 		for type, i in a.types {
 			fmt.println(i, type)
-		}
-
-		for type, i in a.node_types {
-			if type != 0 {
-				fmt.println(i, type)
-			}
 		}
 
 		fmt.println()

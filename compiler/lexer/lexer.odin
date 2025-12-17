@@ -282,3 +282,7 @@ scan_tokens :: proc(s: ^Scanner) -> [dynamic]Token {
 
 	return s.tokens
 }
+
+token_text :: proc(source: string, token: Token) -> string {
+    return source[token.start:token.end]
+}

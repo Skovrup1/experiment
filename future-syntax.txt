@@ -1,0 +1,106 @@
+// base types
+B8, B16, B32, B64, B128 // Boolean
+U8, U16, U32, U64, U128 // Unsigned Integer
+S8, S16, S32, S64, S128 // Signed Integer
+F8, F16, F32, F64, F128 // Floating-point Number
+
+// alias
+Integer :: S32
+
+// array
+arr : [4]S32 : [1, 2, 3, 4]
+
+// array operations
+arr += arr
+
+// matrix
+m : [2, 2]S32 : [[1, 2], [3, 4]]
+
+// matrix operations
+m += m
+
+// slice
+s []S32 := [1, 2, 3, 4]
+
+// struct
+Vec2 :: struct {
+    x: S32,
+    y: S32,
+}
+
+// union
+AorB :: union {
+    A,
+    B,
+}
+
+// enum
+Color :: enum u8 {
+    RED,
+    GREEN,
+    BLUE,
+}
+
+// tuples
+pair :: (10, true)
+
+// tuple destruction
+(a, b) :: pair
+
+// subtyping
+Foo :: struct {
+    a: S32,
+}
+
+Bar :: struct {
+    using Foo,
+    b: S32,
+}
+
+// generics
+add :: ($A a, $A b) -> $A {
+    return a + b
+}
+
+// conditional compilation
+#IF 0
+
+#ELSE
+
+// modules
+#import "math"
+my_math :: #import "math"
+
+// control flow
+d := if a do b else c
+
+if a {
+
+} else {
+
+}
+
+for i := 0; i < 10; i += 1 {
+    if i > 5 {
+        continue;
+    }
+}
+
+while true {
+    break;
+}
+
+switch x {
+    0 =>     {}
+    x > 5 => {}
+    _ =>     {}
+}
+
+// ranges
+x..y
+x.=y
+x=.y
+
+main :: () -> S32 {
+    return 0
+}

@@ -74,7 +74,7 @@ compare_nodes :: proc(p1: ^parser.Parser, n1: parser.NodeIndex, p2: ^parser.Pars
 	case .ExprStmt:
         d1 := parser.decode_data(p1.data[:], node1.data, parser.ExprStmt)
 		d2 := parser.decode_data(p2.data[:], node2.data, parser.ExprStmt)
-		return compare_nodes(p1, d1.expression, p2, d2.expression)
+		return compare_nodes(p1, d1.inner, p2, d2.inner)
 	
 	case .Block:
         d1 := parser.decode_data(p1.data[:], node1.data, parser.BlockStmt)
