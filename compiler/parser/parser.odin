@@ -32,7 +32,7 @@ NodeKind :: enum u8 {
 }
 
 ModuleDecl :: struct {
-	statements: []NodeIndex,
+	nodes: []NodeIndex,
 }
 
 VarDecl :: struct {
@@ -400,8 +400,8 @@ parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
 			value := parse_expr(p)
 			expect(p, .Semicolon)
 
-			var_stmt := VarDecl{INVALID_NODE, value}
-			data := encode_data(&p.data, var_stmt)
+			var_decl := VarDecl{INVALID_NODE, value}
+			data := encode_data(&p.data, var_decl)
 
 			return add_node(p, Node{.Variable, data, token})
 		case .ColonEqual:
@@ -410,8 +410,8 @@ parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
 			value := parse_expr(p)
 			expect(p, .Semicolon)
 
-			var_stmt := VarDecl{INVALID_NODE, value}
-			data := encode_data(&p.data, var_stmt)
+			var_decl := VarDecl{INVALID_NODE, value}
+			data := encode_data(&p.data, var_decl)
 
 			return add_node(p, Node{.Variable, data, token})
 		case .ColonColon:
@@ -446,8 +446,8 @@ parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
 				value := parse_expr(p)
 				expect(p, .Semicolon)
 
-				var_stmt := VarDecl{INVALID_NODE, value}
-				data := encode_data(&p.data, var_stmt)
+				var_decl := VarDecl{INVALID_NODE, value}
+				data := encode_data(&p.data, var_decl)
 
 				return add_node(p, Node{.Variable, data, token})
 			}
@@ -481,7 +481,7 @@ parse_toplevel :: proc(p: ^Parser) -> NodeIndex {
 		initial := parse_toplevel(p)
 		condition := parse_expr(p)
 		expect(p, .Semicolon)
-		update := parse_expr(p)
+		update := parse_toplevel(p)
 		body := parse_toplevel(p)
 
 		for_stmt := ForStmt{initial, condition, update, body}
@@ -591,14 +591,14 @@ program_to_string :: proc(p: ^Parser) -> string {
 			token := p.tokens[node.token]
 			strings.write_string(b, p.source[token.start:token.end])
 		case .Variable:
-			var_stmt := decode_data(p.data[:], node.data, VarDecl)
+			var_decl := decode_data(p.data[:], node.data, VarDecl)
 			token := p.tokens[node.token]
 			if emit_indent {
 				print_indent(b, indent)
 			}
 			strings.write_string(b, p.source[token.start:token.end])
 			strings.write_string(b, " := ")
-			print_node(p, b, var_stmt.value)
+			print_node(p, b, var_decl.value)
 			if !omit_stmt_suffix {
 				strings.write_string(b, "; ")
 			}
@@ -611,7 +611,7 @@ program_to_string :: proc(p: ^Parser) -> string {
 			}
 			if len(block_stmt.statements) > 0 {
 				strings.write_rune(b, '\n')
-			    print_indent(b, indent)
+				print_indent(b, indent)
 			}
 			strings.write_string(b, "} ")
 		case .Parameter:
@@ -621,23 +621,23 @@ program_to_string :: proc(p: ^Parser) -> string {
 			strings.write_string(b, ": ")
 			print_node(p, b, param_stmt.type)
 		case .Procedure:
-			proc_stmt := decode_data(p.data[:], node.data, ProcDecl)
+			proc_decl := decode_data(p.data[:], node.data, ProcDecl)
 			if emit_indent {
 				print_indent(b, indent)
 			}
-			id_token := p.tokens[proc_stmt.name]
+			id_token := p.tokens[proc_decl.name]
 			strings.write_string(b, p.source[id_token.start:id_token.end])
 			strings.write_string(b, " :: (")
-			for param, i in proc_stmt.parameters {
+			for param, i in proc_decl.parameters {
 				if i > 0 do strings.write_string(b, ", ")
 				print_node(p, b, param)
 			}
 			strings.write_string(b, ")")
-			if proc_stmt.return_type != INVALID_NODE {
+			if proc_decl.return_type != INVALID_NODE {
 				strings.write_string(b, " -> ")
-				print_node(p, b, proc_stmt.return_type)
+				print_node(p, b, proc_decl.return_type)
 			}
-			print_node(p, b, proc_stmt.body, indent)
+			print_node(p, b, proc_decl.body, indent)
 		case .If:
 			if_expr := decode_data(p.data[:], node.data, IfExpr)
 			if emit_indent {
@@ -686,7 +686,7 @@ program_to_string :: proc(p: ^Parser) -> string {
 			}
 		case .Module:
 			module_decl := decode_data(p.data[:], node.data, ModuleDecl)
-			for stmt, i in module_decl.statements {
+			for stmt, i in module_decl.nodes {
 				if i > 0 do strings.write_rune(b, '\n')
 				print_node(p, b, stmt, indent)
 			}

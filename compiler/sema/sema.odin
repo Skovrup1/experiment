@@ -1,20 +1,22 @@
 package sema
 
+import "core:fmt"
+import "core:slice"
+import "core:strconv"
+import "core:strings"
+
 import "../lexer"
 import "../parser"
 
-import "core:fmt"
-import "core:slice"
-
 BaseType :: enum u8 {
-	Nil = 0,
+	Null = 0,
 	B32,
 	U32,
 	S32,
 	F32,
 }
 
-base_type_strings := [?]string{"Nil", "B32", "U32", "S32", "F32"}
+base_type_strings := [?]string{"Null", "B32", "U32", "S32", "F32"}
 
 TypeKind :: enum u8 {
 	Primitive,
@@ -41,27 +43,17 @@ Type :: struct {
 	using type_data: TypeData,
 }
 
-SemaError :: struct {
-	message:  string,
-	position: parser.NodeIndex,
-}
-
 SymbolKind :: enum u8 {
 	Variable,
 	Parameter,
 	Procedure,
 }
 
-SymbolState :: enum u8 {
-	Declared,
-	Typed,
-}
-
 Symbol :: struct {
 	kind:  SymbolKind,
 	name:  StringIndex,
 	type:  TypeIndex,
-	state: SymbolState,
+	value: InstID,
 }
 
 Scope :: map[StringIndex]SymbolIndex
@@ -75,13 +67,6 @@ INVALID_TYPE :: max(TypeIndex)
 SymbolIndex :: distinct u32
 INVALID_SYMBOL :: max(SymbolIndex)
 
-NodeContext :: enum u8 {
-	ExprValue,
-	ExprDiscard,
-	ExprCallee,
-	Stmt,
-}
-
 Analyzer :: struct {
 	source:            string,
 	tokens:            []lexer.Token,
@@ -94,7 +79,10 @@ Analyzer :: struct {
 	string_map:        map[string]StringIndex,
 	symbols:           [dynamic]Symbol,
 	scopes:            [dynamic]Scope,
-	errors:            [dynamic]SemaError,
+	errors:            [dynamic]string,
+	functions:         [dynamic]Function,
+	current_func:      ^Function,
+	current_block:     ^Block,
 }
 
 make_analyzer :: proc(
@@ -114,7 +102,9 @@ make_analyzer :: proc(
 
 	scopes := make([dynamic]Scope, 0, 16)
 
-	errors := make([dynamic]SemaError)
+	errors := make([dynamic]string)
+
+	functions := make([dynamic]Function)
 
 	a := Analyzer {
 		source,
@@ -129,9 +119,12 @@ make_analyzer :: proc(
 		symbols,
 		scopes,
 		errors,
+		functions,
+		nil,
+		nil,
 	}
 
-	get_or_add_type(&a, {.Primitive, {primitive = {BaseType.Nil}}})
+	get_or_add_type(&a, {.Primitive, {primitive = {BaseType.Null}}})
 	get_or_add_type(&a, {.Primitive, {primitive = {BaseType.B32}}})
 	get_or_add_type(&a, {.Primitive, {primitive = {BaseType.U32}}})
 	get_or_add_type(&a, {.Primitive, {primitive = {BaseType.S32}}})
@@ -140,9 +133,8 @@ make_analyzer :: proc(
 	return a
 }
 
-add_error :: proc(a: ^Analyzer, message: string, position := parser.INVALID_NODE) {
-	error := SemaError{message, position}
-	append(&a.errors, error)
+add_error :: proc(a: ^Analyzer, message: string) {
+	append(&a.errors, message)
 }
 
 add_string :: proc(a: ^Analyzer, str: string) -> StringIndex {
@@ -190,7 +182,7 @@ add_symbol_to_scope :: proc(a: ^Analyzer, scope: ^Scope, symbol: Symbol) -> Symb
 	symbol_index := SymbolIndex(len(a.symbols) - 1)
 
 	if _, ok := scope[symbol.name]; ok {
-		add_error(a, fmt.tprintf("redeclaration of %v", symbol.name), parser.INVALID_NODE)
+		add_error(a, fmt.tprintf("redeclaration of %v", symbol.name))
 	}
 
 	scope[symbol.name] = symbol_index
@@ -319,7 +311,7 @@ build_procedure_symbol :: proc(a: ^Analyzer, proc_decl: parser.ProcDecl) -> Symb
 
 	return_type := INVALID_TYPE
 	if proc_decl.return_type == parser.INVALID_NODE {
-		return_type = TypeIndex(BaseType.Nil)
+		return_type = TypeIndex(BaseType.Null)
 	} else {
 		return_type = lookup_type(a^, proc_decl.return_type)
 	}
@@ -329,7 +321,7 @@ build_procedure_symbol :: proc(a: ^Analyzer, proc_decl: parser.ProcDecl) -> Symb
 		{.Procedure, {procedure = {return_type, param_names[:], param_types[:]}}},
 	)
 
-	return Symbol{.Procedure, get_or_add_string(a, proc_name), proc_type, .Typed}
+	return Symbol{.Procedure, get_or_add_string(a, proc_name), proc_type, INVALID_INST}
 }
 
 enter_procedure :: proc(a: ^Analyzer, node: parser.Node) {
@@ -342,18 +334,33 @@ enter_procedure :: proc(a: ^Analyzer, node: parser.Node) {
 		proc_type := a.types[symbol.type]
 		assert(proc_type.kind == .Procedure)
 
+		prev_func := a.current_func
+		prev_block := a.current_block
+
 		append(&a.scopes, make(Scope))
 		append(&a.return_type_stack, proc_type.procedure.return_type)
+
+		append(&a.functions, Function{name = proc_name})
+		a.current_func = &a.functions[len(a.functions) - 1]
+
+		append(&a.current_func.blocks, Block{name = proc_name})
+		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
+		a.current_block.insts = make([dynamic]InstID)
 
 		for param_name, i in proc_type.procedure.param_names {
 			param_type := proc_type.procedure.param_types[i]
 
-			symbol := Symbol{.Parameter, param_name, param_type, .Typed}
+			symbol := Symbol{.Parameter, param_name, param_type, INVALID_INST}
 
-			add_symbol_to_current_scope(a, symbol)
+			symbol_index := add_symbol_to_current_scope(a, symbol)
+
+			a.symbols[symbol_index].value = emit_inst(a, Inst{kind = .Param, value = i64(i)})
 		}
 
-		check_node(a, proc_decl.body, .Stmt)
+		check_empty(a, proc_decl.body)
+
+		a.current_block = prev_block
+		a.current_func = prev_func
 
 		pop(&a.scopes)
 		pop(&a.return_type_stack)
@@ -363,8 +370,6 @@ enter_procedure :: proc(a: ^Analyzer, node: parser.Node) {
 }
 
 declare_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
-	assert(node_index != parser.INVALID_NODE)
-
 	node := a.nodes[node_index]
 	token := a.tokens[node.token]
 
@@ -372,7 +377,7 @@ declare_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 	case .Variable:
 		var_name := a.source[token.start:token.end]
 
-		symbol := Symbol{.Variable, get_or_add_string(a, var_name), INVALID_TYPE, .Declared}
+		symbol := Symbol{.Variable, get_or_add_string(a, var_name), INVALID_TYPE, INVALID_INST}
 
 		add_symbol_to_current_scope(a, symbol)
 	case .Procedure:
@@ -386,7 +391,6 @@ declare_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 }
 
 declare_procedures :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
-	assert(node_index != parser.INVALID_NODE)
 
 	node := a.nodes[node_index]
 
@@ -399,8 +403,6 @@ declare_procedures :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 }
 
 infer_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
-	assert(node_index != parser.INVALID_NODE)
-
 	node := a.nodes[node_index]
 	token := a.tokens[node.token]
 
@@ -411,153 +413,272 @@ infer_globals :: proc(a: ^Analyzer, node_index: parser.NodeIndex) {
 		if symbol_index, ok := lookup_symbol(a, var_name); ok {
 			symbol := &a.symbols[symbol_index]
 
-			type := check_node(a, var_decl.value, .ExprValue)
+			_, type := check_value(a, var_decl.value)
 
 			symbol.type = type
-			symbol.state = .Typed
 		}
 	}
 }
 
-check_node :: proc(a: ^Analyzer, node_index: parser.NodeIndex, ctx: NodeContext) -> TypeIndex {
-	assert(node_index != parser.INVALID_NODE)
-
+check_value :: proc(
+	a: ^Analyzer,
+	node_index: parser.NodeIndex,
+) -> (
+	address: InstID,
+	type: TypeIndex,
+) {
 	node := a.nodes[node_index]
 	token := a.tokens[node.token]
+	address = INVALID_INST
+	type = INVALID_TYPE
 
-	switch node.kind {
-	case .True, .False:
-		return TypeIndex(BaseType.B32)
-
+	#partial switch node.kind {
+	case .True:
+		type = TypeIndex(BaseType.B32)
+		value := i64(0)
+		if a.current_func != nil {
+			address = emit_inst(a, Inst{kind = .Imm, type = type, value = 1})
+		}
+	case .False:
+		type = TypeIndex(BaseType.B32)
+		if a.current_func != nil {
+			address = emit_inst(a, Inst{kind = .Imm, type = type, value = 0})
+		}
 	case .Integer:
-		return TypeIndex(BaseType.S32)
+		name := a.source[token.start:token.end]
 
+		type = TypeIndex(BaseType.S32)
+
+		value, ok := strconv.parse_i64_of_base(name, 10)
+		ensure(ok)
+
+		if a.current_func != nil {
+			address = emit_inst(a, Inst{kind = .Imm, type = type, value = value})
+		}
 	case .Float:
-		return TypeIndex(BaseType.F32)
-
+		name := a.source[token.start:token.end]
+		type = TypeIndex(BaseType.F32)
+		value, ok := strconv.parse_f64(name)
+		ensure(ok)
+		if a.current_func != nil {
+			address = emit_inst(a, Inst{kind = .Imm, type = type, value = i64(value)})
+		}
 	case .Identifier:
 		name := a.source[token.start:token.end]
 
 		symbol_index, ok := lookup_symbol(a, name)
-
 		if !ok {
-			add_error(a, fmt.tprintf("undeclared indentifier, %v", name), node_index)
-			return INVALID_TYPE
+			add_error(a, fmt.tprintf("undeclared indentifier, %v", name))
+			return
 		}
 
 		symbol := a.symbols[symbol_index]
 
-		if symbol.state != .Typed {
-			add_error(a, fmt.tprintf("use of untyped global %v", name), node_index)
-			return INVALID_TYPE
-		}
+		type = symbol.type
 
-		if symbol.kind == .Procedure && ctx == .ExprValue {
-			add_error(a, "procedure used as a value", node_index)
-			return INVALID_TYPE
-		}
+		load_args := make([]InstID, 1)
+		load_args[0] = symbol.value
 
-		return symbol.type
+		if a.current_func != nil {
+			address = emit_inst(
+				a,
+				Inst{kind = .Load, args = load_args, type = type, value = i64(symbol_index)},
+			)
+		}
 	case .Call:
 		call_expr := parser.decode_data(a.node_data, node.data, parser.CallExpr)
-		callee_type_index := check_node(a, call_expr.callee, .ExprCallee)
+		callee_addr, callee_type_index := check_value(a, call_expr.callee)
 		if callee_type_index == INVALID_TYPE {
-			return INVALID_TYPE
+			return
 		}
 
 		callee_type := a.types[callee_type_index]
 		if callee_type.kind != .Procedure {
 			add_error(a, "calling non-procedure")
-			return INVALID_TYPE
+			return
 		}
 
 		if len(call_expr.arguments) != len(callee_type.procedure.param_types) {
 			add_error(a, "argument count mismatch")
 		}
 
-		// todo: check each value in the slices
-
-		if ctx == .ExprValue {
-			return callee_type.procedure.return_type
+		arg_addrs := make([dynamic]InstID, 0, len(call_expr.arguments))
+		for arg_node in call_expr.arguments {
+			arg_addr, arg_type := check_value(a, arg_node)
+			append(&arg_addrs, arg_addr)
+			// todo: proper type checking per argument
+			_ = arg_type
 		}
 
-		return INVALID_TYPE
+		type = callee_type.procedure.return_type
 
+		call_args := make([]InstID, 1 + len(arg_addrs))
+		call_args[0] = callee_addr
+		for i in 0 ..< len(arg_addrs) {
+			call_args[i + 1] = arg_addrs[i]
+		}
+
+		if a.current_func != nil {
+			address = emit_inst(
+				a,
+				Inst {
+					kind = .Call,
+					args = call_args,
+					type = type,
+					value = i64(len(call_expr.arguments)),
+				},
+			)
+		}
+	case .Assignment:
+		assign_expr := parser.decode_data(a.node_data, node.data, parser.AssignExpr)
+
+		left_node := a.nodes[assign_expr.left]
+		if left_node.kind != .Identifier {
+			add_error(a, "left-hand side of assignment must be identifier")
+			return
+		}
+
+		left_token := a.tokens[left_node.token]
+		left_name := a.source[left_token.start:left_token.end]
+
+		left_symbol_index, ok := lookup_symbol(a, left_name)
+		if !ok {
+			add_error(a, fmt.tprintf("undeclared indentifier, %v", left_name))
+			return
+		}
+
+		left_symbol := &a.symbols[left_symbol_index]
+		left := left_symbol.type
+
+		addr_r, right := check_value(a, assign_expr.right)
+
+		if left != right {
+			add_error(a, "assignment mismatch")
+		}
+
+		type = left
+
+		left_symbol.value = addr_r
+
+		if a.current_func != nil {
+			store_args := make([]InstID, 1)
+			store_args[0] = addr_r
+
+			emit_inst(
+				a,
+				Inst {
+					kind = .Store,
+					args = store_args,
+					type = left_symbol.type,
+					value = i64(left_symbol_index),
+				},
+			)
+		}
+		address = addr_r
+	case .Addition:
+		add_expr := parser.decode_data(a.node_data, node.data, parser.AddExpr)
+
+		addr_l, left := check_value(a, add_expr.left)
+		addr_r, right := check_value(a, add_expr.right)
+
+		if left != right {
+			add_error(a, "assignment mismatch")
+		}
+
+		type = left
+
+		if a.current_func != nil {
+			add_args := make([]InstID, 2)
+			add_args[0] = addr_l
+			add_args[1] = addr_r
+			address = emit_inst(a, Inst{kind = .Add, args = add_args, type = type})
+		}
+	case .Multiplication:
+		mul_expr := parser.decode_data(a.node_data, node.data, parser.MulExpr)
+
+		addr_l, left := check_value(a, mul_expr.left)
+		addr_r, right := check_value(a, mul_expr.right)
+
+		if left != right {
+			add_error(a, "assignment mismatch")
+		}
+
+		type = left
+
+		if a.current_func != nil {
+			mul_args := make([]InstID, 2)
+			mul_args[0] = addr_l
+			mul_args[1] = addr_r
+			address = emit_inst(a, Inst{kind = .Mul, args = mul_args, type = type})
+		}
+	case .Equal:
+		assign_expr := parser.decode_data(a.node_data, node.data, parser.EqualExpr)
+
+		addr_l, left := check_value(a, assign_expr.left)
+		addr_r, right := check_value(a, assign_expr.right)
+
+		if left != right {
+			add_error(a, "assignment mismatch")
+		}
+
+		type = TypeIndex(BaseType.B32)
+		if a.current_func != nil {
+			eq_args := make([]InstID, 2)
+			eq_args[0] = addr_l
+			eq_args[1] = addr_r
+			address = emit_inst(a, Inst{kind = .Equal, args = eq_args, type = type})
+		}
+	case .Less:
+		less_expr := parser.decode_data(a.node_data, node.data, parser.LessExpr)
+
+		addr_l, left := check_value(a, less_expr.left)
+		addr_r, right := check_value(a, less_expr.right)
+
+		if left != right {
+			add_error(a, "assignment mismatch")
+		}
+
+		type = TypeIndex(BaseType.B32)
+		if a.current_func != nil {
+			lt_args := make([]InstID, 2)
+			lt_args[0] = addr_l
+			lt_args[1] = addr_r
+			address = emit_inst(a, Inst{kind = .Less, args = lt_args, type = type})
+		}
+	case:
+		panic("unhandled")
+	}
+
+	return
+}
+
+check_empty :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (address: InstID) {
+	node := a.nodes[node_index]
+	token := a.tokens[node.token]
+	address = INVALID_INST
+
+	#partial switch node.kind {
 	case .Variable:
 		var_name := a.source[token.start:token.end]
 		var_decl := parser.decode_data(a.node_data, node.data, parser.VarDecl)
 
-		if var_decl.value == parser.INVALID_NODE {
-			return INVALID_TYPE
+		var_type := INVALID_TYPE
+		addr := INVALID_INST
+		if var_decl.value != parser.INVALID_NODE {
+			addr, var_type = check_value(a, var_decl.value)
 		}
-
-		var_type := check_node(a, var_decl.value, .ExprValue)
 
 		symbol := Symbol {
 			kind  = .Variable,
 			name  = get_or_add_string(a, var_name),
 			type  = var_type,
-			state = .Typed,
+			value = INVALID_INST,
 		}
 
-		add_symbol_to_current_scope(a, symbol)
-
-		return INVALID_TYPE
-	case .Assignment:
-		assign_expr := parser.decode_data(a.node_data, node.data, parser.AssignExpr)
-
-		left := check_node(a, assign_expr.left, .ExprValue)
-		right := check_node(a, assign_expr.right, .ExprValue)
-
-		if left != right {
-			add_error(a, "assignment mismatch")
-		}
-
-		return left
-	case .Addition:
-		add_expr := parser.decode_data(a.node_data, node.data, parser.AddExpr)
-
-		left := check_node(a, add_expr.left, .ExprValue)
-		right := check_node(a, add_expr.right, .ExprValue)
-
-		if left != right {
-			add_error(a, "assignment mismatch")
-		}
-
-		return left
-	case .Multiplication:
-		mul_expr := parser.decode_data(a.node_data, node.data, parser.MulExpr)
-
-		left := check_node(a, mul_expr.left, .ExprValue)
-		right := check_node(a, mul_expr.right, .ExprValue)
-
-		if left != right {
-			add_error(a, "assignment mismatch")
-		}
-
-		return left
-	case .Equal:
-		assign_expr := parser.decode_data(a.node_data, node.data, parser.EqualExpr)
-
-		left := check_node(a, assign_expr.left, .ExprValue)
-		right := check_node(a, assign_expr.right, .ExprValue)
-
-		if left != right {
-			add_error(a, "assignment mismatch")
-		}
-
-		return TypeIndex(BaseType.B32)
-	case .Less:
-		less_expr := parser.decode_data(a.node_data, node.data, parser.LessExpr)
-
-		left := check_node(a, less_expr.left, .ExprValue)
-		right := check_node(a, less_expr.right, .ExprValue)
-
-		if left != right {
-			add_error(a, "assignment mismatch")
-		}
-
-		return TypeIndex(BaseType.B32)
+		symbol_index := add_symbol_to_current_scope(a, symbol)
+		a.symbols[symbol_index].value = addr
+	case .Procedure:
+		enter_procedure(a, node)
 	case .Block:
 		append(&a.scopes, make(Scope))
 
@@ -568,87 +689,94 @@ check_node :: proc(a: ^Analyzer, node_index: parser.NodeIndex, ctx: NodeContext)
 		}
 
 		for stmt in block_stmt.statements {
-			check_node(a, stmt, .Stmt)
+			check_empty(a, stmt)
 		}
 
 		pop(&a.scopes)
-
-		return INVALID_TYPE
 	case .Return:
 		if len(a.return_type_stack) == 0 {
-			add_error(a, "return outside procedure", node_index)
-			return INVALID_TYPE
+			add_error(a, "return outside procedure")
+			return
 		}
 
 		expected_type := a.return_type_stack[len(a.return_type_stack) - 1]
 
 		return_stmt := parser.decode_data(a.node_data, node.data, parser.ReturnStmt)
 
-		if return_stmt.value == parser.INVALID_NODE && expected_type != TypeIndex(BaseType.Nil) {
-			add_error(a, "missing return value", node_index)
-			return INVALID_TYPE
+		if return_stmt.value == parser.INVALID_NODE && expected_type != TypeIndex(BaseType.Null) {
+			add_error(a, "missing return value")
 		}
 
-		if expected_type == TypeIndex(BaseType.Nil) {
-			return INVALID_TYPE
+		if expected_type == TypeIndex(BaseType.Null) {
+			return
 		}
 
-		expr_type := check_node(a, return_stmt.value, .ExprValue)
+		addr, expr_type := check_value(a, return_stmt.value)
 		if expected_type != expr_type {
-			add_error(
-				a,
-				fmt.tprintf("mismatch type %v != %v", expected_type, expr_type),
-				node_index,
-			)
-			return INVALID_TYPE
+			add_error(a, fmt.tprintf("mismatch type %v != %v", expected_type, expr_type))
 		}
 
-		return expected_type
-	case .Procedure:
-		enter_procedure(a, node)
+		ret_args := make([]InstID, 1)
+		ret_args[0] = addr
+		return emit_inst(a, Inst{kind = .Return, args = ret_args, type = expected_type})
 
-		return INVALID_TYPE
-	case .ExprStmt:
-		expr_stmt := parser.decode_data(a.node_data, node.data, parser.ExprStmt)
-		check_node(a, expr_stmt.inner, .ExprDiscard)
-		return INVALID_TYPE
-	case .If:
-		if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
-
-		condition := check_node(a, if_expr.condition, .ExprValue)
-		if condition != TypeIndex(BaseType.B32) {
-			add_error(a, "condition must be boolean")
-		}
-
-		check_node(a, if_expr.then_body, .Stmt)
-		if if_expr.else_body != parser.INVALID_NODE {
-			check_node(a, if_expr.else_body, .Stmt)
-		}
-
-		return INVALID_TYPE
 	case .For:
 		for_stmt := parser.decode_data(a.node_data, node.data, parser.ForStmt)
 
 		append(&a.scopes, make(Scope))
 
-		check_node(a, for_stmt.initial, .Stmt)
+		check_empty(a, for_stmt.initial)
 
-		condition := check_node(a, for_stmt.condition, .ExprValue)
+		_, condition := check_value(a, for_stmt.condition)
 		if condition != TypeIndex(BaseType.B32) {
 			add_error(a, "condition must be boolean")
 		}
 
-		check_node(a, for_stmt.update, .Stmt)
-		check_node(a, for_stmt.body, .Stmt)
+		check_empty(a, for_stmt.update)
+		check_empty(a, for_stmt.body)
 
 		pop(&a.scopes)
+	case .If:
+		if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
 
-		return INVALID_TYPE
-	case .Invalid, .Module, .Parameter:
-		panic(fmt.tprintf("unhandled process, %v", node.kind))
+		_, condition := check_value(a, if_expr.condition)
+		if condition != TypeIndex(BaseType.B32) {
+			add_error(a, "condition must be boolean")
+		}
+
+		append(
+			&a.current_func.blocks,
+			Block{name = strings.concatenate({a.current_func.name, ".then"})},
+		)
+		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
+		a.current_block.insts = make([dynamic]InstID)
+
+		check_empty(a, if_expr.then_body)
+
+		append(
+			&a.current_func.blocks,
+			Block{name = strings.concatenate({a.current_func.name, ".else"})},
+		)
+		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
+		a.current_block.insts = make([dynamic]InstID)
+		if if_expr.else_body != parser.INVALID_NODE {
+			check_empty(a, if_expr.else_body)
+		}
+
+		append(
+			&a.current_func.blocks,
+			Block{name = strings.concatenate({a.current_func.name, ".merge"})},
+		)
+		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
+		a.current_block.insts = make([dynamic]InstID)
+	case .ExprStmt:
+		expr_stmt := parser.decode_data(a.node_data, node.data, parser.ExprStmt)
+		check_value(a, expr_stmt.inner)
+	case:
+		panic(fmt.tprintf("unhandled, %v", node.kind))
 	}
 
-	return INVALID_TYPE
+	return
 }
 
 analyze :: proc(a: ^Analyzer) {
@@ -658,15 +786,15 @@ analyze :: proc(a: ^Analyzer) {
 
 	append(&a.scopes, make(Scope))
 
-	for stmt in module_decl.statements {
+	for stmt in module_decl.nodes {
 		declare_globals(a, stmt)
 	}
 
-	for stmt in module_decl.statements {
+	for stmt in module_decl.nodes {
 		infer_globals(a, stmt)
 	}
 
-	for stmt in module_decl.statements {
+	for stmt in module_decl.nodes {
 		node := a.nodes[stmt]
 		if node.kind == .Procedure {
 			enter_procedure(a, node)
@@ -674,4 +802,143 @@ analyze :: proc(a: ^Analyzer) {
 	}
 
 	pop(&a.scopes)
+}
+
+InstID :: distinct u32
+INVALID_INST :: max(InstID)
+
+BlockIndex :: distinct u32
+INVALID_BLOCK :: max(BlockIndex)
+
+InstKind :: enum u8 {
+	Imm,
+	Param,
+	Load,
+	Store,
+	Call,
+	Add,
+	Mul,
+	Equal,
+	Less,
+	Return,
+}
+
+Inst :: struct {
+	kind:  InstKind,
+	args:  []InstID,
+	type:  TypeIndex,
+	value: i64,
+}
+
+Block :: struct {
+	name:  string,
+	insts: [dynamic]InstID,
+}
+
+Function :: struct {
+	name:   string,
+	insts:  [dynamic]Inst,
+	blocks: [dynamic]Block,
+}
+
+inst_label :: proc(index: InstID) -> string {
+	if index == INVALID_INST {
+		return "<invalid>"
+	}
+
+	return fmt.tprintf("%%%v", index)
+}
+
+format_inst :: proc(a: ^Analyzer, index: InstID, inst: Inst) -> string {
+	dst := inst_label(index)
+	type_name := "<invalid>"
+	if inst.type != INVALID_TYPE && u32(inst.type) < u32(len(a.types)) {
+		t := a.types[inst.type]
+		if t.kind == .Primitive {
+			type_name = base_type_strings[t.primitive.inner]
+		} else {
+			type_name = "<proc>"
+		}
+	}
+
+	#partial switch inst.kind {
+	case .Imm:
+		return fmt.tprintf("imm %s,  %v     ; %s", dst, inst.value, type_name)
+	case .Param:
+		return fmt.tprintf("param %s, %v   ; %s", dst, inst.value, type_name)
+	case .Load:
+		sym := a.symbols[SymbolIndex(inst.value)]
+		return fmt.tprintf("load %s, %s ; %s", dst, a.strings[sym.name], type_name)
+	case .Store:
+		sym := a.symbols[SymbolIndex(inst.value)]
+		src := inst_label(inst.args[0])
+		return fmt.tprintf("store %s, %s ; %s", a.strings[sym.name], src, type_name)
+	case .Call:
+		callee := inst_label(inst.args[0])
+		if len(inst.args) > 1 {
+			return fmt.tprintf(
+				"call %s, %s, %s ; argc=%v ; %s",
+				dst,
+				callee,
+				inst_label(inst.args[1]),
+				inst.value,
+				type_name,
+			)
+		}
+		return fmt.tprintf("call %s, %s ; argc=%v ; %s", dst, callee, inst.value, type_name)
+	case .Add:
+		return fmt.tprintf(
+			"add  %s, %s, %s ; %s",
+			dst,
+			inst_label(inst.args[0]),
+			inst_label(inst.args[1]),
+			type_name,
+		)
+	case .Mul:
+		return fmt.tprintf(
+			"mul  %s, %s, %s ; %s",
+			dst,
+			inst_label(inst.args[0]),
+			inst_label(inst.args[1]),
+			type_name,
+		)
+	case .Equal:
+		return fmt.tprintf(
+			"eq  %s, %s, %s ; %s",
+			dst,
+			inst_label(inst.args[0]),
+			inst_label(inst.args[1]),
+			type_name,
+		)
+	case .Less:
+		return fmt.tprintf(
+			"less  %s, %s, %s ; %s",
+			dst,
+			inst_label(inst.args[0]),
+			inst_label(inst.args[1]),
+			type_name,
+		)
+	case .Return:
+		if len(inst.args) == 0 do return "ret"
+
+		return fmt.tprintf("ret %s         ; %s", inst_label(inst.args[0]), type_name)
+	}
+
+	return fmt.tprintf("<%v> %s", inst.kind, dst)
+}
+
+print_block :: proc(a: ^Analyzer, func: Function, block: Block) {
+	fmt.println(fmt.tprintf("%s:", block.name))
+	for inst_index in block.insts {
+		inst := func.insts[inst_index]
+		fmt.println(fmt.tprintf("  %s", format_inst(a, inst_index, inst)))
+	}
+}
+
+emit_inst :: proc(a: ^Analyzer, inst: Inst) -> InstID {
+	id := InstID(len(a.current_func.insts))
+	append(&a.current_func.insts, inst)
+	append(&a.current_block.insts, id)
+
+	return id
 }

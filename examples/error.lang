@@ -1,5 +1,0 @@
-def fac(n: S32) -> S32 {
-    acc := ;
-
-    return acc;
-}

@@ -1,10 +1,8 @@
 package compiler
 
-import "hir"
 import "lexer"
 import "parser"
 import "sema"
-//import "tac"
 
 import "core:fmt"
 import "core:os"
@@ -25,7 +23,7 @@ main :: proc() {
 		vmem.arena_destroy(&arena)
 	}
 
-	handle, open_err := os.open("examples/test.lang")
+	handle, open_err := os.open("examples/if.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)
@@ -66,8 +64,6 @@ main :: proc() {
 		fmt.println()
 	}
 
-	fmt.println(parser.program_to_string(&p))
-
 	a := sema.make_analyzer(source, tokens[:], p.nodes[:], p.data[:])
 	sema.analyze(&a)
 
@@ -77,19 +73,18 @@ main :: proc() {
 		}
 		fmt.println()
 	} else {
-		for str, i in a.strings {
-			fmt.println(i, str)
-		}
-
 		for symbol, i in a.symbols {
 			fmt.println(i, symbol)
 		}
-
-		for type, i in a.types {
-			fmt.println(i, type)
-		}
-
 		fmt.println()
+
+		for func_i in 0..<len(a.functions) {
+			func := a.functions[func_i]
+			for block in func.blocks {
+				sema.print_block(&a, func, block)
+				fmt.println()
+			}
+		}
 	}
 
 	fmt.println("size_of(Node) =", size_of(parser.Node))

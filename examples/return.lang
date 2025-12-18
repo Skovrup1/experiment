@@ -1,5 +1,0 @@
-fac :: (n: F32) -> F32 {
-    acc := n;
-
-    return acc + acc;
-}
