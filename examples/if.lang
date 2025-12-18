@@ -1,0 +1,7 @@
+foo :: () -> S32 {
+    if 0 == 1 {
+        return 2;
+    } else {
+        return 3;
+    }
+}
