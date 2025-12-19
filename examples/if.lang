@@ -4,4 +4,18 @@ foo :: () -> S32 {
     } else {
         return 3;
     }
+
+    return 4;
+}
+
+bar :: () -> S32 {
+    value := 0;
+
+    if 0 == 1 {
+        value = 1;
+    } else {
+        value = 2;
+    }
+
+    return value;
 }

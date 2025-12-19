@@ -23,7 +23,7 @@ main :: proc() {
 		vmem.arena_destroy(&arena)
 	}
 
-	handle, open_err := os.open("examples/if.lang")
+	handle, open_err := os.open("examples/for.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)

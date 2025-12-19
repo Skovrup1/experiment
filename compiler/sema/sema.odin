@@ -436,14 +436,10 @@ check_value :: proc(
 	case .True:
 		type = TypeIndex(BaseType.B32)
 		value := i64(0)
-		if a.current_func != nil {
-			address = emit_inst(a, Inst{kind = .Imm, type = type, value = 1})
-		}
+		address = emit_inst(a, Inst{kind = .Imm, type = type, value = 1})
 	case .False:
 		type = TypeIndex(BaseType.B32)
-		if a.current_func != nil {
-			address = emit_inst(a, Inst{kind = .Imm, type = type, value = 0})
-		}
+		address = emit_inst(a, Inst{kind = .Imm, type = type, value = 0})
 	case .Integer:
 		name := a.source[token.start:token.end]
 
@@ -452,17 +448,13 @@ check_value :: proc(
 		value, ok := strconv.parse_i64_of_base(name, 10)
 		ensure(ok)
 
-		if a.current_func != nil {
-			address = emit_inst(a, Inst{kind = .Imm, type = type, value = value})
-		}
+		address = emit_inst(a, Inst{kind = .Imm, type = type, value = value})
 	case .Float:
 		name := a.source[token.start:token.end]
 		type = TypeIndex(BaseType.F32)
 		value, ok := strconv.parse_f64(name)
 		ensure(ok)
-		if a.current_func != nil {
-			address = emit_inst(a, Inst{kind = .Imm, type = type, value = i64(value)})
-		}
+		address = emit_inst(a, Inst{kind = .Imm, type = type, value = i64(value)})
 	case .Identifier:
 		name := a.source[token.start:token.end]
 
@@ -479,12 +471,10 @@ check_value :: proc(
 		load_args := make([]InstID, 1)
 		load_args[0] = symbol.value
 
-		if a.current_func != nil {
-			address = emit_inst(
-				a,
-				Inst{kind = .Load, args = load_args, type = type, value = i64(symbol_index)},
-			)
-		}
+		address = emit_inst(
+			a,
+			Inst{kind = .Load, args = load_args, type = type, value = i64(symbol_index)},
+		)
 	case .Call:
 		call_expr := parser.decode_data(a.node_data, node.data, parser.CallExpr)
 		callee_addr, callee_type_index := check_value(a, call_expr.callee)
@@ -518,17 +508,15 @@ check_value :: proc(
 			call_args[i + 1] = arg_addrs[i]
 		}
 
-		if a.current_func != nil {
-			address = emit_inst(
-				a,
-				Inst {
-					kind = .Call,
-					args = call_args,
-					type = type,
-					value = i64(len(call_expr.arguments)),
-				},
-			)
-		}
+		address = emit_inst(
+			a,
+			Inst {
+				kind = .Call,
+				args = call_args,
+				type = type,
+				value = i64(len(call_expr.arguments)),
+			},
+		)
 	case .Assignment:
 		assign_expr := parser.decode_data(a.node_data, node.data, parser.AssignExpr)
 
@@ -560,20 +548,18 @@ check_value :: proc(
 
 		left_symbol.value = addr_r
 
-		if a.current_func != nil {
-			store_args := make([]InstID, 1)
-			store_args[0] = addr_r
+		store_args := make([]InstID, 1)
+		store_args[0] = addr_r
 
-			emit_inst(
-				a,
-				Inst {
-					kind = .Store,
-					args = store_args,
-					type = left_symbol.type,
-					value = i64(left_symbol_index),
-				},
-			)
-		}
+		emit_inst(
+			a,
+			Inst {
+				kind = .Store,
+				args = store_args,
+				type = left_symbol.type,
+				value = i64(left_symbol_index),
+			},
+		)
 		address = addr_r
 	case .Addition:
 		add_expr := parser.decode_data(a.node_data, node.data, parser.AddExpr)
@@ -587,12 +573,10 @@ check_value :: proc(
 
 		type = left
 
-		if a.current_func != nil {
-			add_args := make([]InstID, 2)
-			add_args[0] = addr_l
-			add_args[1] = addr_r
-			address = emit_inst(a, Inst{kind = .Add, args = add_args, type = type})
-		}
+		add_args := make([]InstID, 2)
+		add_args[0] = addr_l
+		add_args[1] = addr_r
+		address = emit_inst(a, Inst{kind = .Add, args = add_args, type = type})
 	case .Multiplication:
 		mul_expr := parser.decode_data(a.node_data, node.data, parser.MulExpr)
 
@@ -605,12 +589,10 @@ check_value :: proc(
 
 		type = left
 
-		if a.current_func != nil {
-			mul_args := make([]InstID, 2)
-			mul_args[0] = addr_l
-			mul_args[1] = addr_r
-			address = emit_inst(a, Inst{kind = .Mul, args = mul_args, type = type})
-		}
+		mul_args := make([]InstID, 2)
+		mul_args[0] = addr_l
+		mul_args[1] = addr_r
+		address = emit_inst(a, Inst{kind = .Mul, args = mul_args, type = type})
 	case .Equal:
 		assign_expr := parser.decode_data(a.node_data, node.data, parser.EqualExpr)
 
@@ -622,12 +604,10 @@ check_value :: proc(
 		}
 
 		type = TypeIndex(BaseType.B32)
-		if a.current_func != nil {
-			eq_args := make([]InstID, 2)
-			eq_args[0] = addr_l
-			eq_args[1] = addr_r
-			address = emit_inst(a, Inst{kind = .Equal, args = eq_args, type = type})
-		}
+		eq_args := make([]InstID, 2)
+		eq_args[0] = addr_l
+		eq_args[1] = addr_r
+		address = emit_inst(a, Inst{kind = .Equal, args = eq_args, type = type})
 	case .Less:
 		less_expr := parser.decode_data(a.node_data, node.data, parser.LessExpr)
 
@@ -639,12 +619,10 @@ check_value :: proc(
 		}
 
 		type = TypeIndex(BaseType.B32)
-		if a.current_func != nil {
-			lt_args := make([]InstID, 2)
-			lt_args[0] = addr_l
-			lt_args[1] = addr_r
-			address = emit_inst(a, Inst{kind = .Less, args = lt_args, type = type})
-		}
+		lt_args := make([]InstID, 2)
+		lt_args[0] = addr_l
+		lt_args[1] = addr_r
+		address = emit_inst(a, Inst{kind = .Less, args = lt_args, type = type})
 	case:
 		panic("unhandled")
 	}
@@ -739,36 +717,63 @@ check_empty :: proc(a: ^Analyzer, node_index: parser.NodeIndex) -> (address: Ins
 	case .If:
 		if_expr := parser.decode_data(a.node_data, node.data, parser.IfExpr)
 
-		_, condition := check_value(a, if_expr.condition)
+		cond_addr, condition := check_value(a, if_expr.condition)
 		if condition != TypeIndex(BaseType.B32) {
 			add_error(a, "condition must be boolean")
 		}
 
+		then_index := BlockIndex(len(a.current_func.blocks))
 		append(
 			&a.current_func.blocks,
 			Block{name = strings.concatenate({a.current_func.name, ".then"})},
 		)
-		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
-		a.current_block.insts = make([dynamic]InstID)
+		a.current_func.blocks[then_index].insts = make([dynamic]InstID)
 
-		check_empty(a, if_expr.then_body)
-
+		else_index := BlockIndex(len(a.current_func.blocks))
 		append(
 			&a.current_func.blocks,
 			Block{name = strings.concatenate({a.current_func.name, ".else"})},
 		)
-		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
-		a.current_block.insts = make([dynamic]InstID)
-		if if_expr.else_body != parser.INVALID_NODE {
-			check_empty(a, if_expr.else_body)
-		}
+		a.current_func.blocks[else_index].insts = make([dynamic]InstID)
 
+		merge_index := BlockIndex(len(a.current_func.blocks))
 		append(
 			&a.current_func.blocks,
 			Block{name = strings.concatenate({a.current_func.name, ".merge"})},
 		)
-		a.current_block = &a.current_func.blocks[len(a.current_func.blocks) - 1]
-		a.current_block.insts = make([dynamic]InstID)
+		a.current_func.blocks[merge_index].insts = make([dynamic]InstID)
+
+		branch_args := make([]InstID, 1)
+		branch_args[0] = cond_addr
+		branch_blocks := make([]BlockIndex, 2)
+		branch_blocks[0] = then_index
+		branch_blocks[1] = else_index
+		emit_inst(
+			a,
+			Inst{kind = .Branch, args = branch_args, type = condition, blocks = branch_blocks},
+		)
+
+		a.current_block = &a.current_func.blocks[then_index]
+		check_empty(a, if_expr.then_body)
+
+		if block_needs_terminator(a, a.current_block^) {
+			jump_blocks := make([]BlockIndex, 1)
+			jump_blocks[0] = merge_index
+			emit_inst(a, Inst{kind = .Jump, blocks = jump_blocks})
+		}
+
+		a.current_block = &a.current_func.blocks[else_index]
+		if if_expr.else_body != parser.INVALID_NODE {
+			check_empty(a, if_expr.else_body)
+		}
+
+		if block_needs_terminator(a, a.current_block^) {
+			jump_blocks := make([]BlockIndex, 1)
+			jump_blocks[0] = merge_index
+			emit_inst(a, Inst{kind = .Jump, blocks = jump_blocks})
+		}
+
+		a.current_block = &a.current_func.blocks[merge_index]
 	case .ExprStmt:
 		expr_stmt := parser.decode_data(a.node_data, node.data, parser.ExprStmt)
 		check_value(a, expr_stmt.inner)
@@ -820,14 +825,17 @@ InstKind :: enum u8 {
 	Mul,
 	Equal,
 	Less,
+	Jump,
+	Branch,
 	Return,
 }
 
 Inst :: struct {
-	kind:  InstKind,
-	args:  []InstID,
-	type:  TypeIndex,
-	value: i64,
+	kind:   InstKind,
+	args:   []InstID,
+	type:   TypeIndex,
+	value:  i64,
+	blocks: []BlockIndex,
 }
 
 Block :: struct {
@@ -849,7 +857,7 @@ inst_label :: proc(index: InstID) -> string {
 	return fmt.tprintf("%%%v", index)
 }
 
-format_inst :: proc(a: ^Analyzer, index: InstID, inst: Inst) -> string {
+format_inst :: proc(a: ^Analyzer, func: Function, index: InstID, inst: Inst) -> string {
 	dst := inst_label(index)
 	type_name := "<invalid>"
 	if inst.type != INVALID_TYPE && u32(inst.type) < u32(len(a.types)) {
@@ -918,6 +926,28 @@ format_inst :: proc(a: ^Analyzer, index: InstID, inst: Inst) -> string {
 			inst_label(inst.args[1]),
 			type_name,
 		)
+	case .Jump:
+		target := "<invalid>"
+		if len(inst.blocks) > 0 && u32(inst.blocks[0]) < u32(len(func.blocks)) {
+			target = func.blocks[int(inst.blocks[0])].name
+		}
+		return fmt.tprintf("jmp  %s", target)
+	case .Branch:
+		target_true := "<invalid>"
+		target_false := "<invalid>"
+		if len(inst.blocks) > 0 && u32(inst.blocks[0]) < u32(len(func.blocks)) {
+			target_true = func.blocks[int(inst.blocks[0])].name
+		}
+		if len(inst.blocks) > 1 && u32(inst.blocks[1]) < u32(len(func.blocks)) {
+			target_false = func.blocks[int(inst.blocks[1])].name
+		}
+		return fmt.tprintf(
+			"br  %s, %s, %s ; %s",
+			inst_label(inst.args[0]),
+			target_true,
+			target_false,
+			type_name,
+		)
 	case .Return:
 		if len(inst.args) == 0 do return "ret"
 
@@ -930,8 +960,8 @@ format_inst :: proc(a: ^Analyzer, index: InstID, inst: Inst) -> string {
 print_block :: proc(a: ^Analyzer, func: Function, block: Block) {
 	fmt.println(fmt.tprintf("%s:", block.name))
 	for inst_index in block.insts {
-		inst := func.insts[inst_index]
-		fmt.println(fmt.tprintf("  %s", format_inst(a, inst_index, inst)))
+		inst := func.insts[int(inst_index)]
+		fmt.println(fmt.tprintf("  %s", format_inst(a, func, inst_index, inst)))
 	}
 }
 
@@ -941,4 +971,13 @@ emit_inst :: proc(a: ^Analyzer, inst: Inst) -> InstID {
 	append(&a.current_block.insts, id)
 
 	return id
+}
+
+block_needs_terminator :: proc(a: ^Analyzer, block: Block) -> bool {
+	if len(block.insts) == 0 {
+		return true
+	}
+
+	last_inst := a.current_func.insts[int(block.insts[len(block.insts) - 1])]
+	return last_inst.kind != .Return && last_inst.kind != .Jump && last_inst.kind != .Branch
 }
