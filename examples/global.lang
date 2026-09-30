@@ -1,0 +1,5 @@
+CONSTANT_VALUE := 3;
+
+foo :: () -> S32 {
+    return CONSTANT_VALUE;
+}

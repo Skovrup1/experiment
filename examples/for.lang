@@ -1,0 +1,9 @@
+fac :: () {
+    acc := 1;
+
+    for i := 2; i < 5; i = i + 1; {
+        acc = acc * i;
+    }
+
+    return acc;
+}

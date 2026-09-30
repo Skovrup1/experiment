@@ -23,13 +23,13 @@ main :: proc() {
 		vmem.arena_destroy(&arena)
 	}
 
-	handle, open_err := os.open("examples/for.lang")
+	handle, open_err := os.open("examples/global.lang")
 	defer os.close(handle)
 
 	ensure(open_err == os.ERROR_NONE)
 
-	source_buffer, read_ok := os.read_entire_file(handle)
-	ensure(read_ok == true)
+	source_buffer, read_err := os.read_entire_file_from_file(handle, context.allocator)
+	ensure(read_err == os.ERROR_NONE)
 
 	source := string(source_buffer)
 	fmt.println(source)
@@ -78,11 +78,12 @@ main :: proc() {
 		}
 		fmt.println()
 
-		for func_i in 0..<len(a.functions) {
-			func := a.functions[func_i]
-			for block in func.blocks {
-				sema.print_block(&a, func, block)
-				fmt.println()
+		for module in a.modules {
+			for func in module.funcs {
+				for block in func.blocks {
+					sema.print_block(&a, func, block)
+					fmt.println()
+				}
 			}
 		}
 	}
